@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FWF Phase 1 — State + Renderer 测试</title>
+  <style>
+    :root {
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    body {
+      margin: 0;
+      padding: 20px;
+      background: #0f172a;
+      color: #e2e8f0;
+      line-height: 1.5;
+    }
+    h1 { font-size: 18px; margin: 0 0 12px; }
+    h2 { font-size: 14px; color: #94a3b8; margin: 20px 0 8px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+    button {
+      background: #1e293b;
+      color: #e2e8f0;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 8px 12px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    button:hover { background: #334155; }
+    button.active { border-color: #3b82f6; color: #93c5fd; }
+    #root {
+      width: 66px;
+      height: 66px;
+      border-radius: 33px;
+      background: rgba(255,255,255,0.2);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.3);
+      margin: 24px 0;
+      transition: width 0.3s, border-radius 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      color: #fff;
+    }
+    #root.is-open:not(.is-docked) {
+      width: 240px;
+      border-radius: 16px;
+    }
+    #root.is-docked { width: 66px; border-radius: 33px; }
+    #root.is-dragging { opacity: 0.85; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+    #root.is-playing { outline: 2px solid #3b82f6; }
+    #root.expand-left { margin-left: -174px; }
+    pre {
+      background: #020617;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      padding: 12px;
+      font-size: 12px;
+      overflow: auto;
+      max-height: 280px;
+    }
+    .pass { color: #4ade80; }
+    .fail { color: #f87171; }
+    #log { font-size: 12px; color: #94a3b8; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>Phase 1 测试：State → normalize → Renderer</h1>
+  <p style="font-size:13px;color:#94a3b8;margin:0 0 16px;">
+    点击按钮 patch 状态，观察左侧球的 class 与下方 state 快照。非法组合应被 normalize 自动纠正。
+  </p>
+
+  <div id="root">FW</div>
+
+  <h2>Mode</h2>
+  <div class="row">
+    <button data-patch='{"mode":"BALL"}'>BALL</button>
+    <button data-patch='{"mode":"PANEL"}'>PANEL</button>
+    <button data-patch='{"mode":"DOCK","dock":{"enabled":true,"side":"left"}}'>DOCK left</button>
+    <button data-patch='{"mode":"DOCK","dock":{"enabled":true,"side":"right","expanded":true}}'>DOCK expanded</button>
+  </div>
+
+  <h2>Interaction / Layout</h2>
+  <div class="row">
+    <button data-patch='{"interaction":{"dragging":true}}'>dragging=true</button>
+    <button data-patch='{"interaction":{"dragging":false,"snapping":true}}'>snapping</button>
+    <button data-patch='{"layout":{"expandLeft":true}}'>expandLeft</button>
+    <button data-patch='{"layout":{"listOpen":true}}'>listOpen</button>
+    <button data-patch='{"playing":true}}'>playing</button>
+    <button data-patch='{"playing":false}}'>pause</button>
+    <button data-patch='{"isMobile":true}}'>isMobile</button>
+  </div>
+
+  <h2>非法组合（应被纠正）</h2>
+  <div class="row">
+    <button id="illegal1">PANEL + dragging</button>
+    <button id="illegal2">BALL + dock.expanded</button>
+    <button id="illegal3">DOCK + expandLeft</button>
+  </div>
+
+  <h2>当前 State</h2>
+  <pre id="state">{}</pre>
+
+  <h2>Root classList</h2>
+  <pre id="classes"></pre>
+
+  <h2>自动断言</h2>
+  <div id="log"></div>
+
+  <script type="module">
+    import { createState, normalize, createInitialState } from "./src/core/State.js";
+    import { createRenderer, bindStateToRenderer } from "./src/ui/Renderer.js";
+
+    const root = document.getElementById("root");
+    const stateEl = document.getElementById("state");
+    const classEl = document.getElementById("classes");
+    const logEl = document.getElementById("log");
+
+    const store = createState({ isMobile: window.innerWidth <= 600 });
+    const renderer = createRenderer(root);
+    bindStateToRenderer(store, renderer);
+
+    function refresh() {
+      const s = store.get();
+      stateEl.textContent = JSON.stringify(s, null, 2);
+      classEl.textContent = Array.from(root.classList).sort().join("\n") || "(none)";
+    }
+
+    store.subscribe(() => refresh());
+    refresh();
+
+    // button patches
+    document.querySelectorAll("[data-patch]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const partial = JSON.parse(btn.getAttribute("data-patch"));
+        store.patch(partial);
+      });
+    });
+
+    document.getElementById("illegal1").onclick = () => {
+      store.patch({ mode: "PANEL", layout: { listOpen: true }, interaction: { dragging: true } });
+    };
+    document.getElementById("illegal2").onclick = () => {
+      store.patch({ mode: "BALL", dock: { expanded: true, side: "left" } });
+    };
+    document.getElementById("illegal3").onclick = () => {
+      store.patch({
+        mode: "DOCK",
+        dock: { enabled: true, side: "right", expanded: true },
+        layout: { expandLeft: true },
+      });
+    };
+
+    // auto assertions
+    const logs = [];
+    function check(name, cond) {
+      logs.push((cond ? "✅ " : "❌ ") + name);
+    }
+
+    // run normalize unit checks in browser too
+    {
+      const s1 = normalize(createInitialState({
+        mode: "PANEL",
+        layout: { listOpen: true },
+        interaction: { dragging: true },
+      }));
+      check("PANEL+dragging → BALL", s1.mode === "BALL" && s1.layout.listOpen === false);
+
+      const s2 = normalize(createInitialState({
+        mode: "BALL",
+        dock: { expanded: true },
+      }));
+      check("BALL + expanded → expanded false", s2.dock.expanded === false);
+
+      const s3 = normalize(createInitialState({
+        mode: "DOCK",
+        dock: { enabled: true, side: "left", expanded: true },
+        layout: { expandLeft: true },
+      }));
+      check("DOCK clears expandLeft", s3.layout.expandLeft === false && s3.dock.expanded === true);
+
+      const s4 = normalize(createInitialState({
+        mode: "DOCK",
+        dock: { enabled: true, side: "left", expanded: true, closing: true },
+      }));
+      check("closing forces expanded false", s4.dock.expanded === false && s4.dock.closing === true);
+    }
+
+    // renderer projection check
+    store.patch({ mode: "PANEL", playing: true });
+    check("Renderer adds is-open + is-playing", root.classList.contains("is-open") && root.classList.contains("is-playing"));
+    store.patch({ mode: "BALL", playing: false, interaction: { dragging: true } });
+    check("Renderer adds is-dragging, removes is-open", root.classList.contains("is-dragging") && !root.classList.contains("is-open"));
+    store.patch({ mode: "DOCK", dock: { enabled: true, side: "left", expanded: true }, interaction: { dragging: false } });
+    check("DOCK expanded → is-docked + dock-left + is-open", root.classList.contains("is-docked") && root.classList.contains("dock-left") && root.classList.contains("is-open"));
+
+    logEl.textContent = logs.join("\n");
+    refresh();
+  </script>
+</body>
+</html>

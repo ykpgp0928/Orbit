@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>FWF Music — dist 成品测试</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <link rel="stylesheet" href="./dist/floating-widget-music.css" />
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, sans-serif;
+      background: linear-gradient(145deg, #e0e7ff, #fce7f3);
+    }
+    .tip {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      max-width: 420px;
+      padding: 12px 14px;
+      background: rgba(15, 23, 42, 0.88);
+      color: #e2e8f0;
+      border-radius: 10px;
+      font-size: 13px;
+      line-height: 1.5;
+      z-index: 1;
+    }
+    code { color: #93c5fd; }
+  </style>
+</head>
+<body>
+  <div class="tip">
+    <strong>这是打包后的成品测试页</strong><br />
+    文件来自 <code>dist/floating-widget-music.*</code><br />
+    可在下方脚本前用 <code>window.FWF_MUSIC</code> 改歌单。
+  </div>
+  <!--
+  <script>
+    window.FWF_MUSIC = { server: "netease", type: "playlist", id: "你的歌单ID" };
+  </script>
+  -->
+  <script src="./dist/floating-widget-music.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>FWF Demo — Music + Clock（无 Hexo）</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <link rel="stylesheet" href="../dist/floating-widget-music.css" />
+  <link rel="stylesheet" href="../dist/floating-widget-clock.css" />
+  <style>
+    :root {
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(1200px 600px at 10% 0%, #dbeafe, transparent),
+        radial-gradient(900px 500px at 90% 10%, #fce7f3, transparent),
+        linear-gradient(180deg, #f8fafc, #e2e8f0);
+      color: #0f172a;
+    }
+    .wrap {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 48px 20px 120px;
+    }
+    h1 {
+      font-size: 1.6rem;
+      margin: 0 0 8px;
+    }
+    p {
+      line-height: 1.6;
+      opacity: 0.85;
+    }
+    .card {
+      margin-top: 24px;
+      padding: 16px 18px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.55);
+      border: 1px solid rgba(255, 255, 255, 0.5);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 8px 30px rgba(15, 23, 42, 0.08);
+    }
+    code {
+      font-size: 0.9em;
+      background: rgba(15, 23, 42, 0.06);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    ul {
+      line-height: 1.7;
+      padding-left: 1.2em;
+    }
+    .badge {
+      display: inline-block;
+      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #0f172a;
+      color: #f8fafc;
+      margin-bottom: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="badge">FWF 0.1.0 · Phase 6 Demo</div>
+    <h1>Web Floating Widget Framework</h1>
+    <p>
+      本页<strong>不依赖 Hexo</strong>。右下角附近会出现两个悬浮组件：
+      <strong>Music</strong>（音乐球）与 <strong>Clock</strong>（时钟球）。
+      它们共用拖拽 / 吸附交互语言，内容不同。
+    </p>
+
+    <div class="card">
+      <strong>请试</strong>
+      <ul>
+        <li>拖动任一球体；靠近左右边缘松手应磁吸</li>
+        <li>Music：桌面悬停展开控制条；移动端点按（视宽度）</li>
+        <li>Clock：桌面移入展开、移出关闭；右吸附后应向左展开</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <strong>接入一句</strong>
+      <p>
+        生产环境只需拷贝 <code>dist/</code> 下对应的 <code>.js</code> + <code>.css</code>。
+        详见仓库 <code>README.md</code> 与 <code>docs/</code>。
+      </p>
+    </div>
+  </div>
+
+  <script>
+    // 可选：换成你的歌单 ID
+    window.FWF_MUSIC = {
+      server: "netease",
+      type: "playlist",
+      id: "3778678"
+    };
+  </script>
+  <script src="../dist/floating-widget-music.js" defer></script>
+  <script src="../dist/floating-widget-clock.js" defer></script>
+</body>
+</html>

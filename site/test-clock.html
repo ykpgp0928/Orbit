@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>FWF Clock Widget — Phase 5</title>
+  <link rel="stylesheet" href="./dist/floating-widget-clock.css" />
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, sans-serif;
+      background: linear-gradient(145deg, #dbeafe, #fef3c7 50%, #e0e7ff);
+    }
+    .tip {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      max-width: 440px;
+      padding: 12px 14px;
+      background: rgba(15, 23, 42, 0.88);
+      color: #e2e8f0;
+      border-radius: 10px;
+      font-size: 13px;
+      line-height: 1.55;
+      z-index: 1;
+    }
+    code { color: #93c5fd; }
+  </style>
+</head>
+<body>
+  <div class="tip">
+    <strong>Phase 5 — Clock 第二 Widget</strong><br />
+    与 Music 共用 Gesture / Drag / Snap 交互语言，但内容是时钟。<br />
+    短按：展开日期时间 · 长按/滑动：拖拽 · 靠边缘：磁吸
+  </div>
+  <script src="./dist/floating-widget-clock.js" defer></script>
+</body>
+</html>

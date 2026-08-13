@@ -1,0 +1,8 @@
+# Cloudflare Workers 静态资源（仅 site/，不要用仓库根目录）
+name = "floating-widget-framework"
+compatibility_date = "2026-08-13"
+workers_dev = true
+
+[assets]
+directory = "./site"
+not_found_handling = "single-page-application"

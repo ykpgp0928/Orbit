@@ -1,0 +1,11 @@
+# 发布到 npm 时不需要源码开发杂项（仍保留 dist + 必要文档）
+baseline/
+working/
+tools/
+test-*.html
+docs/phase*.md
+docs/INTERACTION_CHECKLIST.md
+docs/baseline-constants.js
+node_modules/
+.git/
+*.tgz

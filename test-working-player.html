@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>FWF Phase 1 — Working Player Integration Test</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+  <link rel="stylesheet" href="./working/music-player.css" />
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(145deg, #dbeafe, #fce7f3 50%, #e0e7ff);
+      font-family: system-ui, sans-serif;
+    }
+    .banner {
+      position: fixed;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      z-index: 1;
+      background: rgba(15, 23, 42, 0.85);
+      color: #e2e8f0;
+      padding: 10px 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      max-width: 480px;
+    }
+    .banner code { color: #93c5fd; }
+  </style>
+</head>
+<body>
+  <div class="banner">
+    <strong>Phase 1 接入测试</strong> — working/music-player.js<br />
+    请用检查表验证：拖拽 / 吸附 / Dock / 展开 / 移动端卡片 / 鬼点击。<br />
+    控制台可执行 <code>document.getElementById('music-player').className</code> 查看投影结果。
+  </div>
+  <script src="./working/music-player.js"></script>
+</body>
+</html>

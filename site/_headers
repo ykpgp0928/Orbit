@@ -1,0 +1,5 @@
+/*
+  X-Content-Type-Options: nosniff
+
+/dist/*
+  Cache-Control: public, max-age=86400

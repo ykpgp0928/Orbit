@@ -1,0 +1,41 @@
+{
+  "name": "floating-widget-framework",
+  "version": "0.1.0",
+  "description": "Web Floating Widget Framework — draggable/snappable floating Music & Clock widgets for Hexo and any static page",
+  "license": "MIT",
+  "author": "",
+  "keywords": [
+    "floating-widget",
+    "hexo",
+    "music-player",
+    "clock",
+    "drag",
+    "dock",
+    "snap"
+  ],
+  "main": "dist/floating-widget-music.js",
+  "files": [
+    "dist",
+    "demo",
+    "docs/API.md",
+    "docs/CONFIG.md",
+    "docs/THEME.md",
+    "docs/phase6-publish.md",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "prepare-site": "node scripts/build.mjs && node scripts/prepare-site.mjs",
+    "prepublishOnly": "node scripts/build.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YOUR_USERNAME/floating-widget-framework.git"
+  },
+  "bugs": {
+    "url": "https://github.com/YOUR_USERNAME/floating-widget-framework/issues"
+  },
+  "homepage": "https://github.com/YOUR_USERNAME/floating-widget-framework#readme"
+}
