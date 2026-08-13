@@ -131,21 +131,13 @@ node_modules/floating-widget-framework/dist/
 
 ---
 
-## 本地演示（看效果）
-
-在项目根目录：
-
-```bash
-npx --yes serve -p 3456 .
-```
-
-浏览器打开：
-
-| 页面 | 地址 |
+## 在线演示（看效果）
+浏览器打开[该链接](https://floating-widget-framework.ykpgp0928.dpdns.org/)，会有三个选项：  
+| 描述 | 说明 |
 |------|------|
-| Music + Clock 一起 | http://127.0.0.1:3456/demo/ |
-| 仅 Music | http://127.0.0.1:3456/test-dist.html |
-| 仅 Clock | http://127.0.0.1:3456/test-clock.html |
+| 总览Demo | 时钟与音乐都存在 |
+| 仅 Music | 仅有音乐球 |
+| 仅 Clock | 仅有时钟球 |
 
 ---
 
