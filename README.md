@@ -100,6 +100,9 @@ npx --yes serve -p 3456 .
 | 仅 Music | http://127.0.0.1:3456/test-dist.html |
 | 仅 Clock | http://127.0.0.1:3456/test-clock.html |
 
+### 在线演示
+访问fwf/floating-widget-framework/orbit.ykpgp0928.dpdns.org,即可查看在线演示，内容与本地演示相同
+
 ---
 
 ## 配置摘要
