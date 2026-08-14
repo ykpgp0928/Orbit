@@ -1,19 +1,27 @@
 # Changelog
 
+## 0.2.0-c — 2026-08-14
+
+### Orbit Runtime
+
+- 品牌名 **Orbit**；多 Widget 入口 `dist/orbit.js`
+- `Orbit.mount` / `setVisible` / `list`
+- Launcher 面板：桌面 `Alt+O`，移动端长按球
+- 首次快捷键 / 长按提示（可关）
+- Launcher 脚注：桌面 Alt+O / Esc，移动端长按与点遮罩
+- 文档与 Demo 统一 Orbit 叙述（Phase D）
+
+### Fixes
+
+- Music `display:block !important` 下仍可隐藏
+- 长按松手顺序：先识别长按再 endDrag（避免被当成点按）
+
 ## 0.1.0 — 2026-08-13
 
 ### Added
 
-- Floating Widget Framework 预览：Shell 交互与 Widget 分离  
-- **Music Widget**：歌单、播放、Dock、移动端卡片、桌面展开  
-- **Clock Widget**：时间显示、桌面悬停 / 移动端点按、右吸附向左展开  
-- Interaction 模块：Gesture、Drag、Snap、Dock、Layout  
-- AudioEngine、WidgetRegistry  
-- `dist/` 单文件产物 + `npm run build`  
-- 文档：API、CONFIG、THEME、各 Phase 记录  
-- 静态 `demo/index.html`（无需 Hexo）
+- Floating Widget Framework 预览：Shell 交互与 Widget 分离
+- Music Widget、Clock Widget
+- Interaction 模块、AudioEngine、WidgetRegistry
+- `dist/` 单文件 + 静态 demo
 
-### Notes
-
-- Hexo 使用方式：拷贝 `dist` 中对应 js/css 并 inject  
-- `window.FWF_MUSIC` 可覆盖歌单配置  

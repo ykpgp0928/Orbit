@@ -1,30 +1,41 @@
-/*! FWF bundled */
-(function(){
+/*! Orbit / FWF bundled */
+(function () {
 "use strict";
+var __modules = {};
+var __cache = {};
+function __require(k) {
+  if (__cache[k]) return __cache[k];
+  var m = { default: undefined };
+  var factory = __modules[k];
+  if (!factory) throw new Error('Module not found: ' + k);
+  __cache[k] = m;
+  factory(m, __require);
+  return m;
+}
 
-/* ---- src\interaction\Gesture.js ---- */
+/* ---- src/interaction/Gesture.js ---- */
+__modules["src/interaction/Gesture.js"] = function (__mod, __require) {
 /**
  * FWF Interaction — Gesture
  *
- * Owns: short press vs long press, click threshold, ghost-click guard window.
- * Does NOT: move position, snap, dock, or touch audio.
- *
- * Outputs intents via callbacks:
- *   onToggle()           — short press on cover
- *   onDragStart(e)       — long press or move past threshold
+ * Owns: short press vs long press, click threshold, ghost-click guard.
+ * Long-press + small movement → onLongPressTap (e.g. open Orbit launcher)
+ * Long-press + move / move past threshold → onDragStart
  */
 
 /**
  * @typedef {Object} GestureConfig
  * @property {number} longPressMs
  * @property {number} clickThreshold
+ * @property {number} [longPressTapMax] max movement to still count as long-press tap
  */
 
 /**
  * @typedef {Object} GestureHandlers
  * @property {() => void} [onToggle]
  * @property {(e: PointerEvent) => void} [onDragStart]
- * @property {() => boolean} [isBlocked]  — e.g. dock-closing / ignore window
+ * @property {(e: PointerEvent) => void} [onLongPressTap]
+ * @property {() => boolean} [isBlocked]
  */
 
 /**
@@ -32,6 +43,11 @@
  * @param {GestureHandlers} handlers
  */
 function createGesture(config, handlers) {
+  const longPressMs = config.longPressMs != null ? config.longPressMs : 550;
+  const clickThreshold = config.clickThreshold != null ? config.clickThreshold : 8;
+  const longPressTapMax =
+    config.longPressTapMax != null ? config.longPressTapMax : 20;
+
   let longPressTimer = null;
   let activePointer = null;
   let startClientX = 0;
@@ -39,6 +55,7 @@ function createGesture(config, handlers) {
   let moveDist = 0;
   let dragging = false;
   let longPressTriggered = false;
+  let lastEvent = null;
   let gestureId = null;
   let toggleBusy = false;
   let ignoreUntil = 0;
@@ -61,9 +78,15 @@ function createGesture(config, handlers) {
     return false;
   }
 
+  function beginDrag(e) {
+    if (dragging) return;
+    dragging = true;
+    clearLongPress();
+    if (handlers.onDragStart) handlers.onDragStart(e || lastEvent);
+  }
+
   /**
    * @param {PointerEvent} e
-   * @returns {{ startClientX: number, startClientY: number } | null}
    */
   function onPointerDown(e) {
     if (e.pointerType === "mouse" && e.button !== 0) return null;
@@ -76,16 +99,16 @@ function createGesture(config, handlers) {
     moveDist = 0;
     dragging = false;
     longPressTriggered = false;
+    lastEvent = e;
 
     clearLongPress();
-    longPressTimer = setTimeout(() => {
+    longPressTimer = setTimeout(function () {
       if (activePointer == null) return;
+      // Armed only — drag starts on move; stay-put release → long-press tap
       longPressTriggered = true;
-      dragging = true;
-      if (handlers.onDragStart) handlers.onDragStart(e);
-    }, config.longPressMs);
+    }, longPressMs);
 
-    return { startClientX, startClientY };
+    return { startClientX: startClientX, startClientY: startClientY };
   }
 
   /**
@@ -96,15 +119,13 @@ function createGesture(config, handlers) {
     if (activePointer == null || e.pointerId !== activePointer) return "ignore";
     if (e.pointerType === "mouse" && e.buttons === 0) return "ignore";
 
+    lastEvent = e;
     const dx = e.clientX - startClientX;
     const dy = e.clientY - startClientY;
     moveDist = Math.sqrt(dx * dx + dy * dy);
 
-    if (!dragging && moveDist > config.clickThreshold) {
-      clearLongPress();
-      dragging = true;
-      longPressTriggered = false;
-      if (handlers.onDragStart) handlers.onDragStart(e);
+    if (!dragging && moveDist > clickThreshold) {
+      beginDrag(e);
       return "drag";
     }
     return dragging ? "drag" : "pending";
@@ -119,7 +140,6 @@ function createGesture(config, handlers) {
       session && session.pointerId != null
         ? session.pointerId
         : e && e.pointerId;
-    // allow caller to end session first then pass pointerId
     if (
       session &&
       session.pointerId == null &&
@@ -129,28 +149,50 @@ function createGesture(config, handlers) {
     ) {
       return;
     }
+
+    const wasLong = longPressTriggered;
+    const dist = moveDist;
     clearLongPress();
     activePointer = null;
 
-    const wasDrag = session && session.wasDragging;
+    const wasDrag = (session && session.wasDragging) || dragging;
+    dragging = false;
+    longPressTriggered = false;
+
     if (wasDrag) return;
 
-    // one toggle per gesture id
     if (gestureId === pid) return;
     gestureId = pid;
-    setTimeout(() => {
+    setTimeout(function () {
       if (gestureId === pid) gestureId = null;
     }, 600);
 
     if (isToggleBlocked()) return;
 
-    toggleBusy = true;
-    try {
-      if (handlers.onToggle) handlers.onToggle();
-    } finally {
-      setTimeout(() => {
-        toggleBusy = false;
-      }, 50);
+    // Long-press + little movement → launcher / long-press action
+    if (wasLong && dist <= longPressTapMax) {
+      toggleBusy = true;
+      try {
+        if (handlers.onLongPressTap) handlers.onLongPressTap(e || lastEvent);
+      } finally {
+        setTimeout(function () {
+          toggleBusy = false;
+        }, 50);
+      }
+      blockToggle(400);
+      return;
+    }
+
+    // Short tap
+    if (!wasLong) {
+      toggleBusy = true;
+      try {
+        if (handlers.onToggle) handlers.onToggle();
+      } finally {
+        setTimeout(function () {
+          toggleBusy = false;
+        }, 50);
+      }
     }
   }
 
@@ -162,22 +204,39 @@ function createGesture(config, handlers) {
   }
 
   return {
-    onPointerDown,
-    onPointerMove,
-    onPointerUp,
-    cancel,
-    blockToggle,
-    isToggleBlocked,
-    getActivePointer: () => activePointer,
-    getStart: () => ({ x: startClientX, y: startClientY }),
-    isDragging: () => dragging,
-    wasLongPress: () => longPressTriggered,
-    getMoveDist: () => moveDist,
-    getIgnoreUntil: () => ignoreUntil,
+    onPointerDown: onPointerDown,
+    onPointerMove: onPointerMove,
+    onPointerUp: onPointerUp,
+    cancel: cancel,
+    blockToggle: blockToggle,
+    isToggleBlocked: isToggleBlocked,
+    getActivePointer: function () {
+      return activePointer;
+    },
+    getStart: function () {
+      return { x: startClientX, y: startClientY };
+    },
+    isDragging: function () {
+      return dragging;
+    },
+    wasLongPress: function () {
+      return longPressTriggered;
+    },
+    getMoveDist: function () {
+      return moveDist;
+    },
+    getIgnoreUntil: function () {
+      return ignoreUntil;
+    },
   };
 }
 
-/* ---- src\interaction\Drag.js ---- */
+if (typeof createGesture !== 'undefined') __mod.createGesture = createGesture;
+
+};
+
+/* ---- src/interaction/Drag.js ---- */
+__modules["src/interaction/Drag.js"] = function (__mod, __require) {
 /**
  * FWF Interaction — Drag
  *
@@ -262,7 +321,12 @@ function createDrag(ctx) {
   };
 }
 
-/* ---- src\interaction\Snap.js ---- */
+if (typeof createDrag !== 'undefined') __mod.createDrag = createDrag;
+
+};
+
+/* ---- src/interaction/Snap.js ---- */
+__modules["src/interaction/Snap.js"] = function (__mod, __require) {
 /**
  * FWF Interaction — Snap
  *
@@ -480,7 +544,12 @@ function createSnap(config, ctx) {
   };
 }
 
-/* ---- src\interaction\Dock.js ---- */
+if (typeof createSnap !== 'undefined') __mod.createSnap = createSnap;
+
+};
+
+/* ---- src/interaction/Dock.js ---- */
+__modules["src/interaction/Dock.js"] = function (__mod, __require) {
 /**
  * FWF Interaction — Dock
  *
@@ -608,7 +677,12 @@ function createDock(handlers) {
   };
 }
 
-/* ---- src\interaction\ExpandPolicy.js ---- */
+if (typeof createDock !== 'undefined') __mod.createDock = createDock;
+
+};
+
+/* ---- src/interaction/ExpandPolicy.js ---- */
+__modules["src/interaction/ExpandPolicy.js"] = function (__mod, __require) {
 /**
  * FWF Interaction — ExpandPolicy
  *
@@ -695,7 +769,17 @@ function expandDownTranslateY(isOpen, expandDown, ballH, openH) {
   return 0;
 }
 
-/* ---- src\interaction\Layout.js ---- */
+if (typeof resolveExpandDirection !== 'undefined') __mod.resolveExpandDirection = resolveExpandDirection;
+if (typeof resolveDockStackDirection !== 'undefined') __mod.resolveDockStackDirection = resolveDockStackDirection;
+if (typeof expandDownTranslateY !== 'undefined') __mod.expandDownTranslateY = expandDownTranslateY;
+
+};
+
+/* ---- src/interaction/Layout.js ---- */
+__modules["src/interaction/Layout.js"] = function (__mod, __require) {
+var __dep0 = __require("src/interaction/ExpandPolicy.js");
+var resolveExpandDirection = __dep0.resolveExpandDirection;
+var resolveDockStackDirection = __dep0.resolveDockStackDirection;
 /**
  * FWF Interaction — Layout
  *
@@ -923,7 +1007,12 @@ function createLayout(ctx) {
   };
 }
 
-/* ---- src\media\AudioEngine.js ---- */
+if (typeof createLayout !== 'undefined') __mod.createLayout = createLayout;
+
+};
+
+/* ---- src/media/AudioEngine.js ---- */
+__modules["src/media/AudioEngine.js"] = function (__mod, __require) {
 /**
  * FWF Media — AudioEngine
  *
@@ -1066,7 +1155,24 @@ function createAudioEngine(handlers) {
   };
 }
 
-/* ---- src\host\music-player-host.js ---- */
+if (typeof createAudioEngine !== 'undefined') __mod.createAudioEngine = createAudioEngine;
+
+};
+
+/* ---- src/host/music-player-host.js ---- */
+__modules["src/host/music-player-host.js"] = function (__mod, __require) {
+var __dep0 = __require("src/interaction/Gesture.js");
+var createGesture = __dep0.createGesture;
+var __dep1 = __require("src/interaction/Drag.js");
+var createDrag = __dep1.createDrag;
+var __dep2 = __require("src/interaction/Snap.js");
+var createSnap = __dep2.createSnap;
+var __dep3 = __require("src/interaction/Dock.js");
+var createDock = __dep3.createDock;
+var __dep4 = __require("src/interaction/Layout.js");
+var createLayout = __dep4.createLayout;
+var __dep5 = __require("src/media/AudioEngine.js");
+var createAudioEngine = __dep5.createAudioEngine;
 /**
  * FWF Music Player Host（模块源码，请用 npm run build 打包后再给 Hexo 使用）
  */
@@ -1091,7 +1197,7 @@ const CONFIG = {
     snapRelease: 36,
     snapThresholdMobile: 28,
     snapReleaseMobile: 28,
-    longPressMs: 380,
+    longPressMs: 550,
     clickThreshold: 12,
     ballSize: 66,
     ballSizeMobile: 52
@@ -2179,11 +2285,25 @@ const CONFIG = {
   function ensureGesture() {
     if (gesture) return gesture;
     gesture = createGesture(
-      { longPressMs: CONFIG.longPressMs, clickThreshold: CONFIG.clickThreshold },
+      {
+        longPressMs: CONFIG.longPressMs,
+        clickThreshold: CONFIG.clickThreshold,
+        longPressTapMax: 20,
+      },
       {
         onToggle: function () {
           if (isMobile) toggleMobileBall();
           else togglePlay();
+        },
+        onLongPressTap: function (e) {
+          var touch =
+            (e && (e.pointerType === "touch" || e.pointerType === "pen")) ||
+            isMobile ||
+            window.innerWidth <= 600;
+          if (!touch) return;
+          if (window.Orbit && typeof window.Orbit.openLauncher === "function") {
+            window.Orbit.openLauncher();
+          }
         },
         onDragStart: function () {
           wasDragging = true;
@@ -2323,17 +2443,16 @@ const CONFIG = {
     if (pid == null || e.pointerId !== pid) return;
 
     var wasDrag = wasDragging || dragging || g.isDragging();
+    // Gesture cancel is inside endDragSession — resolve tap/long-press first
+    if (!wasDrag) {
+      g.onPointerUp(e, { wasDragging: false, pointerId: pid });
+    }
     endDragSession(true);
 
     try {
       e.preventDefault();
       e.stopPropagation();
     } catch (err) {}
-
-    if (wasDrag) return;
-
-    // toggle intent (dedupe + ghost guard inside Gesture)
-    g.onPointerUp(e, { wasDragging: false, pointerId: pid });
   }
 
 
@@ -2449,6 +2568,7 @@ const CONFIG = {
 
   function ensureVisibleOnScreen() {
     if (!root) return;
+    if (root.classList && root.classList.contains("orbit-hidden")) return;
     root.style.cssText += ";display:block;visibility:visible;opacity:1;pointer-events:auto;z-index:99999;";
     const fix = () => {
       const before = { x: posX, y: posY }, [nx, ny] = clampPosition(posX, posY);
@@ -2513,8 +2633,19 @@ const CONFIG = {
 function startMusicPlayer() {
   boot();
 }
+__mod.boot = boot;
+__mod.init = init;
 
-/* ---- src\entry-music.js ---- */
+if (typeof startMusicPlayer !== 'undefined') __mod.startMusicPlayer = startMusicPlayer;
+if (typeof boot !== 'undefined') __mod.boot = boot;
+if (typeof init !== 'undefined') __mod.init = init;
+
+};
+
+/* ---- src/entry-music.js ---- */
+__modules["src/entry-music.js"] = function (__mod, __require) {
+var __dep0 = __require("src/host/music-player-host.js");
+var startMusicPlayer = __dep0.startMusicPlayer;
 /**
  * 浏览器打包入口（esbuild 会把它和依赖打成一个文件）
  * Hexo 只需引入 dist/floating-widget-music.js
@@ -2523,4 +2654,8 @@ function startMusicPlayer() {
 // 允许在引入脚本前设置 window.FWF_MUSIC 覆盖默认歌单
 startMusicPlayer();
 
+
+};
+
+__require("src/entry-music.js");
 })();

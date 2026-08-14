@@ -17,7 +17,7 @@ const CONFIG = {
   snapRelease: 36,
   snapThresholdMobile: 28,
   snapReleaseMobile: 28,
-  longPressMs: 380,
+  longPressMs: 550,
   clickThreshold: 12,
   ballSize: 72,
   ballSizeMobile: 56,
@@ -274,12 +274,27 @@ function setOpen(open) {
 function ensureGesture() {
   if (gesture) return gesture;
   gesture = createGesture(
-    { longPressMs: CONFIG.longPressMs, clickThreshold: CONFIG.clickThreshold },
+    {
+      longPressMs: CONFIG.longPressMs,
+      clickThreshold: CONFIG.clickThreshold,
+      longPressTapMax: 20,
+    },
     {
       onToggle: function () {
         // Desktop: hover open/close. Mobile: tap toggle.
         if (!isMobile) return;
         setOpen(!isOpen);
+      },
+      onLongPressTap: function (e) {
+        // Mobile / touch: long-press stay → Orbit launcher
+        var touch =
+          (e && (e.pointerType === "touch" || e.pointerType === "pen")) ||
+          isMobile ||
+          window.innerWidth <= 600;
+        if (!touch) return;
+        if (window.Orbit && typeof window.Orbit.openLauncher === "function") {
+          window.Orbit.openLauncher();
+        }
       },
       onDragStart: function () {
         wasDragging = true;
@@ -364,6 +379,11 @@ function onDown(e) {
   if (e.pointerType === "mouse" && e.button !== 0) return;
   const g = ensureGesture();
   if (g.getActivePointer() != null) return;
+  if (e.pointerType === "touch" || e.pointerType === "pen") {
+    try {
+      e.preventDefault();
+    } catch (err) {}
+  }
   ensureSnap().clearMagnet();
   wasDragging = false;
   dragging = false;
@@ -409,13 +429,15 @@ function onUp(e) {
   const pid = g.getActivePointer();
   if (pid == null || e.pointerId !== pid) return;
   const wasDrag = wasDragging || dragging || g.isDragging();
+  // Must handle toggle / long-press-tap BEFORE endDragSession → cancel()
+  if (!wasDrag) {
+    g.onPointerUp(e, { wasDragging: false, pointerId: pid });
+  }
   endDragSession(true);
   try {
     e.preventDefault();
     e.stopPropagation();
   } catch (err) {}
-  if (wasDrag) return;
-  g.onPointerUp(e, { wasDragging: false, pointerId: pid });
 }
 
 function onDocPointerDown(e) {

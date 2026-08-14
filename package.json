@@ -1,7 +1,7 @@
 {
   "name": "floating-widget-framework",
-  "version": "0.1.0",
-  "description": "Web Floating Widget Framework — draggable/snappable floating Music & Clock widgets for Hexo and any static page",
+  "version": "0.2.0",
+  "description": "Orbit — floating widget runtime (Music & Clock) for Hexo and static pages",
   "license": "MIT",
   "author": "",
   "keywords": [

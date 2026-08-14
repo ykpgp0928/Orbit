@@ -1,30 +1,41 @@
-/*! FWF bundled */
-(function(){
+/*! Orbit / FWF bundled */
+(function () {
 "use strict";
+var __modules = {};
+var __cache = {};
+function __require(k) {
+  if (__cache[k]) return __cache[k];
+  var m = { default: undefined };
+  var factory = __modules[k];
+  if (!factory) throw new Error('Module not found: ' + k);
+  __cache[k] = m;
+  factory(m, __require);
+  return m;
+}
 
-/* ---- src\interaction\Gesture.js ---- */
+/* ---- src/interaction/Gesture.js ---- */
+__modules["src/interaction/Gesture.js"] = function (__mod, __require) {
 /**
  * FWF Interaction — Gesture
  *
- * Owns: short press vs long press, click threshold, ghost-click guard window.
- * Does NOT: move position, snap, dock, or touch audio.
- *
- * Outputs intents via callbacks:
- *   onToggle()           — short press on cover
- *   onDragStart(e)       — long press or move past threshold
+ * Owns: short press vs long press, click threshold, ghost-click guard.
+ * Long-press + small movement → onLongPressTap (e.g. open Orbit launcher)
+ * Long-press + move / move past threshold → onDragStart
  */
 
 /**
  * @typedef {Object} GestureConfig
  * @property {number} longPressMs
  * @property {number} clickThreshold
+ * @property {number} [longPressTapMax] max movement to still count as long-press tap
  */
 
 /**
  * @typedef {Object} GestureHandlers
  * @property {() => void} [onToggle]
  * @property {(e: PointerEvent) => void} [onDragStart]
- * @property {() => boolean} [isBlocked]  — e.g. dock-closing / ignore window
+ * @property {(e: PointerEvent) => void} [onLongPressTap]
+ * @property {() => boolean} [isBlocked]
  */
 
 /**
@@ -32,6 +43,11 @@
  * @param {GestureHandlers} handlers
  */
 function createGesture(config, handlers) {
+  const longPressMs = config.longPressMs != null ? config.longPressMs : 550;
+  const clickThreshold = config.clickThreshold != null ? config.clickThreshold : 8;
+  const longPressTapMax =
+    config.longPressTapMax != null ? config.longPressTapMax : 20;
+
   let longPressTimer = null;
   let activePointer = null;
   let startClientX = 0;
@@ -39,6 +55,7 @@ function createGesture(config, handlers) {
   let moveDist = 0;
   let dragging = false;
   let longPressTriggered = false;
+  let lastEvent = null;
   let gestureId = null;
   let toggleBusy = false;
   let ignoreUntil = 0;
@@ -61,9 +78,15 @@ function createGesture(config, handlers) {
     return false;
   }
 
+  function beginDrag(e) {
+    if (dragging) return;
+    dragging = true;
+    clearLongPress();
+    if (handlers.onDragStart) handlers.onDragStart(e || lastEvent);
+  }
+
   /**
    * @param {PointerEvent} e
-   * @returns {{ startClientX: number, startClientY: number } | null}
    */
   function onPointerDown(e) {
     if (e.pointerType === "mouse" && e.button !== 0) return null;
@@ -76,16 +99,16 @@ function createGesture(config, handlers) {
     moveDist = 0;
     dragging = false;
     longPressTriggered = false;
+    lastEvent = e;
 
     clearLongPress();
-    longPressTimer = setTimeout(() => {
+    longPressTimer = setTimeout(function () {
       if (activePointer == null) return;
+      // Armed only — drag starts on move; stay-put release → long-press tap
       longPressTriggered = true;
-      dragging = true;
-      if (handlers.onDragStart) handlers.onDragStart(e);
-    }, config.longPressMs);
+    }, longPressMs);
 
-    return { startClientX, startClientY };
+    return { startClientX: startClientX, startClientY: startClientY };
   }
 
   /**
@@ -96,15 +119,13 @@ function createGesture(config, handlers) {
     if (activePointer == null || e.pointerId !== activePointer) return "ignore";
     if (e.pointerType === "mouse" && e.buttons === 0) return "ignore";
 
+    lastEvent = e;
     const dx = e.clientX - startClientX;
     const dy = e.clientY - startClientY;
     moveDist = Math.sqrt(dx * dx + dy * dy);
 
-    if (!dragging && moveDist > config.clickThreshold) {
-      clearLongPress();
-      dragging = true;
-      longPressTriggered = false;
-      if (handlers.onDragStart) handlers.onDragStart(e);
+    if (!dragging && moveDist > clickThreshold) {
+      beginDrag(e);
       return "drag";
     }
     return dragging ? "drag" : "pending";
@@ -119,7 +140,6 @@ function createGesture(config, handlers) {
       session && session.pointerId != null
         ? session.pointerId
         : e && e.pointerId;
-    // allow caller to end session first then pass pointerId
     if (
       session &&
       session.pointerId == null &&
@@ -129,28 +149,50 @@ function createGesture(config, handlers) {
     ) {
       return;
     }
+
+    const wasLong = longPressTriggered;
+    const dist = moveDist;
     clearLongPress();
     activePointer = null;
 
-    const wasDrag = session && session.wasDragging;
+    const wasDrag = (session && session.wasDragging) || dragging;
+    dragging = false;
+    longPressTriggered = false;
+
     if (wasDrag) return;
 
-    // one toggle per gesture id
     if (gestureId === pid) return;
     gestureId = pid;
-    setTimeout(() => {
+    setTimeout(function () {
       if (gestureId === pid) gestureId = null;
     }, 600);
 
     if (isToggleBlocked()) return;
 
-    toggleBusy = true;
-    try {
-      if (handlers.onToggle) handlers.onToggle();
-    } finally {
-      setTimeout(() => {
-        toggleBusy = false;
-      }, 50);
+    // Long-press + little movement → launcher / long-press action
+    if (wasLong && dist <= longPressTapMax) {
+      toggleBusy = true;
+      try {
+        if (handlers.onLongPressTap) handlers.onLongPressTap(e || lastEvent);
+      } finally {
+        setTimeout(function () {
+          toggleBusy = false;
+        }, 50);
+      }
+      blockToggle(400);
+      return;
+    }
+
+    // Short tap
+    if (!wasLong) {
+      toggleBusy = true;
+      try {
+        if (handlers.onToggle) handlers.onToggle();
+      } finally {
+        setTimeout(function () {
+          toggleBusy = false;
+        }, 50);
+      }
     }
   }
 
@@ -162,22 +204,39 @@ function createGesture(config, handlers) {
   }
 
   return {
-    onPointerDown,
-    onPointerMove,
-    onPointerUp,
-    cancel,
-    blockToggle,
-    isToggleBlocked,
-    getActivePointer: () => activePointer,
-    getStart: () => ({ x: startClientX, y: startClientY }),
-    isDragging: () => dragging,
-    wasLongPress: () => longPressTriggered,
-    getMoveDist: () => moveDist,
-    getIgnoreUntil: () => ignoreUntil,
+    onPointerDown: onPointerDown,
+    onPointerMove: onPointerMove,
+    onPointerUp: onPointerUp,
+    cancel: cancel,
+    blockToggle: blockToggle,
+    isToggleBlocked: isToggleBlocked,
+    getActivePointer: function () {
+      return activePointer;
+    },
+    getStart: function () {
+      return { x: startClientX, y: startClientY };
+    },
+    isDragging: function () {
+      return dragging;
+    },
+    wasLongPress: function () {
+      return longPressTriggered;
+    },
+    getMoveDist: function () {
+      return moveDist;
+    },
+    getIgnoreUntil: function () {
+      return ignoreUntil;
+    },
   };
 }
 
-/* ---- src\interaction\Drag.js ---- */
+if (typeof createGesture !== 'undefined') __mod.createGesture = createGesture;
+
+};
+
+/* ---- src/interaction/Drag.js ---- */
+__modules["src/interaction/Drag.js"] = function (__mod, __require) {
 /**
  * FWF Interaction — Drag
  *
@@ -262,7 +321,12 @@ function createDrag(ctx) {
   };
 }
 
-/* ---- src\interaction\Snap.js ---- */
+if (typeof createDrag !== 'undefined') __mod.createDrag = createDrag;
+
+};
+
+/* ---- src/interaction/Snap.js ---- */
+__modules["src/interaction/Snap.js"] = function (__mod, __require) {
 /**
  * FWF Interaction — Snap
  *
@@ -480,7 +544,12 @@ function createSnap(config, ctx) {
   };
 }
 
-/* ---- src\interaction\ExpandPolicy.js ---- */
+if (typeof createSnap !== 'undefined') __mod.createSnap = createSnap;
+
+};
+
+/* ---- src/interaction/ExpandPolicy.js ---- */
+__modules["src/interaction/ExpandPolicy.js"] = function (__mod, __require) {
 /**
  * FWF Interaction — ExpandPolicy
  *
@@ -567,11 +636,20 @@ function expandDownTranslateY(isOpen, expandDown, ballH, openH) {
   return 0;
 }
 
-/* ---- src\core\WidgetRegistry.js ---- */
+if (typeof resolveExpandDirection !== 'undefined') __mod.resolveExpandDirection = resolveExpandDirection;
+if (typeof resolveDockStackDirection !== 'undefined') __mod.resolveDockStackDirection = resolveDockStackDirection;
+if (typeof expandDownTranslateY !== 'undefined') __mod.expandDownTranslateY = expandDownTranslateY;
+
+};
+
+/* ---- src/core/WidgetRegistry.js ---- */
+__modules["src/core/WidgetRegistry.js"] = function (__mod, __require) {
 /**
- * FWF Core — WidgetRegistry
+ * Orbit / FWF Core — WidgetRegistry (subsystem)
  *
- * Runtime does not know about Music; widgets register by id.
+ * Holds widget *definitions* (id → { mount }).
+ * Public app code should prefer window.Orbit / Orbit.registry, not this module alone.
+ * Runtime hosts (Phase A+) mount instances via Orbit; definitions stay here.
  */
 
 const registry = Object.create(null);
@@ -611,7 +689,17 @@ function mountWidget(id, ctx) {
   return w.mount(ctx);
 }
 
-/* ---- src\widgets\clock\ClockWidget.js ---- */
+if (typeof registerWidget !== 'undefined') __mod.registerWidget = registerWidget;
+if (typeof getWidget !== 'undefined') __mod.getWidget = getWidget;
+if (typeof listWidgets !== 'undefined') __mod.listWidgets = listWidgets;
+if (typeof mountWidget !== 'undefined') __mod.mountWidget = mountWidget;
+
+};
+
+/* ---- src/widgets/clock/ClockWidget.js ---- */
+__modules["src/widgets/clock/ClockWidget.js"] = function (__mod, __require) {
+var __dep0 = __require("src/core/WidgetRegistry.js");
+var registerWidget = __dep0.registerWidget;
 /**
  * FWF Clock Widget — second official widget (Phase 5)
  *
@@ -696,7 +784,23 @@ function mount(ctx) {
 registerWidget("clock", { mount: mount });
 
 
-/* ---- src\host\clock-host.js ---- */
+if (typeof mount !== 'undefined') __mod.mount = mount;
+
+};
+
+/* ---- src/host/clock-host.js ---- */
+__modules["src/host/clock-host.js"] = function (__mod, __require) {
+var __dep0 = __require("src/interaction/Gesture.js");
+var createGesture = __dep0.createGesture;
+var __dep1 = __require("src/interaction/Drag.js");
+var createDrag = __dep1.createDrag;
+var __dep2 = __require("src/interaction/Snap.js");
+var createSnap = __dep2.createSnap;
+var __dep3 = __require("src/interaction/ExpandPolicy.js");
+var resolveExpandDirection = __dep3.resolveExpandDirection;
+var expandDownTranslateY = __dep3.expandDownTranslateY;
+var __dep4 = __require("src/widgets/clock/ClockWidget.js");
+var mount = __dep4.mount;
 /**
  * FWF Clock Host — minimal floating shell + Clock widget
  * Reuses Gesture / Drag / Snap (same interaction language as Music).
@@ -712,7 +816,7 @@ const CONFIG = {
   snapRelease: 36,
   snapThresholdMobile: 28,
   snapReleaseMobile: 28,
-  longPressMs: 380,
+  longPressMs: 550,
   clickThreshold: 12,
   ballSize: 72,
   ballSizeMobile: 56,
@@ -969,12 +1073,27 @@ function setOpen(open) {
 function ensureGesture() {
   if (gesture) return gesture;
   gesture = createGesture(
-    { longPressMs: CONFIG.longPressMs, clickThreshold: CONFIG.clickThreshold },
+    {
+      longPressMs: CONFIG.longPressMs,
+      clickThreshold: CONFIG.clickThreshold,
+      longPressTapMax: 20,
+    },
     {
       onToggle: function () {
         // Desktop: hover open/close. Mobile: tap toggle.
         if (!isMobile) return;
         setOpen(!isOpen);
+      },
+      onLongPressTap: function (e) {
+        // Mobile / touch: long-press stay → Orbit launcher
+        var touch =
+          (e && (e.pointerType === "touch" || e.pointerType === "pen")) ||
+          isMobile ||
+          window.innerWidth <= 600;
+        if (!touch) return;
+        if (window.Orbit && typeof window.Orbit.openLauncher === "function") {
+          window.Orbit.openLauncher();
+        }
       },
       onDragStart: function () {
         wasDragging = true;
@@ -1059,6 +1178,11 @@ function onDown(e) {
   if (e.pointerType === "mouse" && e.button !== 0) return;
   const g = ensureGesture();
   if (g.getActivePointer() != null) return;
+  if (e.pointerType === "touch" || e.pointerType === "pen") {
+    try {
+      e.preventDefault();
+    } catch (err) {}
+  }
   ensureSnap().clearMagnet();
   wasDragging = false;
   dragging = false;
@@ -1104,13 +1228,15 @@ function onUp(e) {
   const pid = g.getActivePointer();
   if (pid == null || e.pointerId !== pid) return;
   const wasDrag = wasDragging || dragging || g.isDragging();
+  // Must handle toggle / long-press-tap BEFORE endDragSession → cancel()
+  if (!wasDrag) {
+    g.onPointerUp(e, { wasDragging: false, pointerId: pid });
+  }
   endDragSession(true);
   try {
     e.preventDefault();
     e.stopPropagation();
   } catch (err) {}
-  if (wasDrag) return;
-  g.onPointerUp(e, { wasDragging: false, pointerId: pid });
 }
 
 function onDocPointerDown(e) {
@@ -1192,12 +1318,27 @@ function boot() {
 function startClockWidget() {
   boot();
 }
+__mod.boot = boot;
+__mod.init = init;
 
-/* ---- src\entry-clock.js ---- */
+if (typeof startClockWidget !== 'undefined') __mod.startClockWidget = startClockWidget;
+if (typeof boot !== 'undefined') __mod.boot = boot;
+if (typeof init !== 'undefined') __mod.init = init;
+
+};
+
+/* ---- src/entry-clock.js ---- */
+__modules["src/entry-clock.js"] = function (__mod, __require) {
+var __dep0 = __require("src/host/clock-host.js");
+var startClockWidget = __dep0.startClockWidget;
 /**
  * Clock widget entry — bundle to dist/floating-widget-clock.js
  */
 
 startClockWidget();
 
+
+};
+
+__require("src/entry-clock.js");
 })();

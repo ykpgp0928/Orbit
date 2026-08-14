@@ -1,13 +1,65 @@
-# FWF 公开 API（v0.1）
+# Orbit / FWF 公开 API（v0.2）
 
-> 当前交付形态：**打包后的单文件自动启动**。  
-> 下面分为「今天就能用」与「框架演进中的目标 API」。
+> 交付形态：浏览器单文件。  
+> **多 Widget** 用 `dist/orbit.js`；**单 Widget** 用 music / clock 独立包。
 
 ---
 
-## 1. 今天就能用（浏览器 / Hexo）
+## 1. 多 Widget：`orbit.js`（推荐）
 
-### 1.1 Music
+```html
+<link rel="stylesheet" href="./floating-widget-music.css" />
+<link rel="stylesheet" href="./floating-widget-clock.css" />
+<script>
+  window.FWF_MUSIC = { server: "netease", type: "playlist", id: "3778678" };
+  window.ORBIT = {
+    launcherKey: "Alt+O",
+    launcherHint: true,
+    widgets: [
+      { id: "music", visible: true },
+      { id: "clock", visible: true }
+    ]
+  };
+</script>
+<script src="./orbit.js" defer></script>
+```
+
+**不要**再同时引入 `floating-widget-music.js` / `floating-widget-clock.js`。
+
+### 1.1 打开管理面板
+
+| 环境 | 方式 |
+|------|------|
+| 桌面 | `Alt+O`（`ORBIT.launcherKey` 可改） |
+| 手机 | **长按**任意悬浮球约 0.5s，少滑动后松手 |
+| 任意 | `Orbit.toggleLauncher()` / `openLauncher()` / `closeLauncher()` |
+| 关闭 | `Esc`、点遮罩 |
+
+### 1.2 `window.Orbit` API
+
+| 方法 | 说明 |
+|------|------|
+| `mount(config?)` | 按配置启动（入口会自动调用） |
+| `list()` | `[{ id, visible }]` |
+| `listHosts()` | 已注册宿主 id |
+| `setVisible(id, bool)` | 显示 / 隐藏 |
+| `toggleLauncher()` | 开关管理面板 |
+| `openLauncher()` / `closeLauncher()` | 开 / 关面板 |
+| `getLauncherKey()` | 当前快捷键文案 |
+| `on` / `off` | 事件（如 `visibilityChange`） |
+| `version` | 如 `0.2.0-c` |
+
+### 1.3 `window.ORBIT` 配置
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `launcherKey` | string | 默认 `Alt+O` |
+| `launcherHint` | boolean | 首次右下角提示，默认 true |
+| `widgets` | array | `{ id: "music"\|"clock", visible?: boolean }` |
+
+---
+
+## 2. 仅 Music
 
 ```html
 <script>
@@ -21,98 +73,48 @@
 <script src="./floating-widget-music.js" defer></script>
 ```
 
-脚本加载后会自动：
+| 字段 | 说明 |
+|------|------|
+| `server` | 音源（Meting） |
+| `type` | `playlist` / `song` / … |
+| `id` | 歌单或歌曲 ID |
 
-1. 创建 `#music-player` 悬浮壳  
-2. 拉取歌单并挂上 AudioEngine  
-3. 绑定拖拽 / 吸附 / Dock  
+---
 
-**暂无**要求你手动调用 `init()`。
-
-### 1.2 Clock
+## 3. 仅 Clock
 
 ```html
 <link rel="stylesheet" href="./floating-widget-clock.css" />
 <script src="./floating-widget-clock.js" defer></script>
 ```
 
-自动创建 `#fwf-clock`。
-
 - 桌面：悬停展开 / 移出关闭  
-- 移动：点按开关；点外部关闭  
+- 移动：点按；点外部关闭  
 - 右吸附：向左展开  
 
-### 1.3 配置对象 `window.FWF_MUSIC`
-
-| 字段 | 类型 | 默认 | 说明 |
-|------|------|------|------|
-| `server` | string | `"netease"` | 音源平台（Meting 约定） |
-| `type` | string | `"playlist"` | `playlist` / `song` / `album` 等 |
-| `id` | string | 示例 ID | 歌单或歌曲 ID |
-
-须在 **music 脚本之前** 赋值。
-
 ---
 
-## 2. 源码层模块（给二次开发）
+## 4. 源码模块（二次开发）
 
-打包前可从 `src/` 引用（需自己打包）：
+| 模块 | 路径 |
+|------|------|
+| Orbit | `src/core/Orbit.js` |
+| Launcher | `src/core/Launcher.js` |
+| Gesture… | `src/interaction/*` |
+| Hosts | `src/host/*` |
 
-| 模块 | 路径 | 作用 |
-|------|------|------|
-| Gesture | `src/interaction/Gesture.js` | `createGesture(config, handlers)` |
-| Drag | `src/interaction/Drag.js` | `createDrag(ctx)` |
-| Snap | `src/interaction/Snap.js` | `createSnap(config, ctx)` |
-| Dock | `src/interaction/Dock.js` | `createDock(handlers)` |
-| Layout | `src/interaction/Layout.js` | `createLayout(ctx)` |
-| AudioEngine | `src/media/AudioEngine.js` | `createAudioEngine(handlers)` |
-| WidgetRegistry | `src/core/WidgetRegistry.js` | `registerWidget` / `mountWidget` |
-| Music Widget | `src/widgets/music/MusicWidget.js` | `registerWidget("music")` |
-| Clock Widget | `src/widgets/clock/ClockWidget.js` | `registerWidget("clock")` |
-
-### 2.1 Widget 约定
-
-```js
-registerWidget("id", {
-  mount(ctx) { /* return controller */ },
-  unmount?(controller) {}
-});
+```bash
+npm run build
 ```
 
-`ctx` 至少可包含：`root`、`refs`、`config`、`options`。
+生成 `dist/floating-widget-music.js`、`floating-widget-clock.js`、`orbit.js`。
 
 ---
 
-## 3. 目标 Runtime API（后续版本，设计冻结草案）
-
-```js
-const widget = createFloatingWidget({
-  id: "music",
-  position: { corner: "bottom-right" },
-  behavior: { snap: true, drag: true, longPress: true }
-});
-
-widget.open();
-widget.close();
-widget.toggle();
-widget.dock();
-widget.undock();
-widget.setPosition(x, y);
-widget.getState();
-widget.destroy();
-widget.on("modeChange", handler);
-widget.off("modeChange", handler);
-```
-
-v0.1 **尚未**在 `dist` 暴露上述对象；行为已在 Host 内实现。Phase 6 文档将其定为下一版对外表面。
-
----
-
-## 4. 版本语义
+## 5. 版本
 
 | 版本 | 含义 |
 |------|------|
-| `0.x` | 预览：允许调整 API |
-| `1.0` | 锁定 `createFloatingWidget` 与配置 schema |
-
-当前：**0.1.0**
+| `0.1.x` | 单 Widget 成品 |
+| `0.2.x` | Orbit 多 Widget + Launcher |
+| `1.0` | 计划锁定对外 API（未到） |

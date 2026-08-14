@@ -1,7 +1,9 @@
 /**
- * FWF Core — WidgetRegistry
+ * Orbit / FWF Core — WidgetRegistry (subsystem)
  *
- * Runtime does not know about Music; widgets register by id.
+ * Holds widget *definitions* (id → { mount }).
+ * Public app code should prefer window.Orbit / Orbit.registry, not this module alone.
+ * Runtime hosts (Phase A+) mount instances via Orbit; definitions stay here.
  */
 
 const registry = Object.create(null);

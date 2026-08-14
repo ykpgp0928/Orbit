@@ -13,6 +13,873 @@ function __require(k) {
   return m;
 }
 
+/* ---- src/core/WidgetRegistry.js ---- */
+__modules["src/core/WidgetRegistry.js"] = function (__mod, __require) {
+/**
+ * Orbit / FWF Core — WidgetRegistry (subsystem)
+ *
+ * Holds widget *definitions* (id → { mount }).
+ * Public app code should prefer window.Orbit / Orbit.registry, not this module alone.
+ * Runtime hosts (Phase A+) mount instances via Orbit; definitions stay here.
+ */
+
+const registry = Object.create(null);
+
+/**
+ * @param {string} id
+ * @param {{ mount: Function, unmount?: Function }} widget
+ */
+function registerWidget(id, widget) {
+  if (!id || !widget || typeof widget.mount !== "function") {
+    throw new Error("registerWidget requires id and mount()");
+  }
+  registry[id] = widget;
+}
+
+/**
+ * @param {string} id
+ */
+function getWidget(id) {
+  return registry[id] || null;
+}
+
+/**
+ * @returns {string[]}
+ */
+function listWidgets() {
+  return Object.keys(registry);
+}
+
+/**
+ * @param {string} id
+ * @param {object} ctx — shell refs, storage, emit, etc.
+ */
+function mountWidget(id, ctx) {
+  const w = getWidget(id);
+  if (!w) throw new Error("Unknown widget: " + id);
+  return w.mount(ctx);
+}
+
+if (typeof registerWidget !== 'undefined') __mod.registerWidget = registerWidget;
+if (typeof getWidget !== 'undefined') __mod.getWidget = getWidget;
+if (typeof listWidgets !== 'undefined') __mod.listWidgets = listWidgets;
+if (typeof mountWidget !== 'undefined') __mod.mountWidget = mountWidget;
+
+};
+
+/* ---- src/core/Launcher.js ---- */
+__modules["src/core/Launcher.js"] = function (__mod, __require) {
+/**
+ * Orbit Launcher — panel + hotkey (default Alt+O)
+ * Open/close: light opacity + translate (no heavy backdrop-filter)
+ */
+
+const LABELS = {
+  music: "Music 音乐",
+  clock: "Clock 时钟",
+};
+
+const STYLE_ID = "orbit-launcher-style";
+const ROOT_ID = "orbit-launcher";
+const ANIM_MS = 180;
+
+function isCoarsePointer() {
+  if (typeof window === "undefined") return false;
+  try {
+    if (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) {
+      return true;
+    }
+  } catch (e) {}
+  return window.innerWidth <= 600;
+}
+
+function ensureStyles() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById(STYLE_ID)) return;
+  const s = document.createElement("style");
+  s.id = STYLE_ID;
+  s.textContent = `
+/* Force-hide any Orbit-managed root (Music CSS uses display:block !important) */
+.orbit-hidden{
+  display:none !important;
+  visibility:hidden !important;
+  pointer-events:none !important;
+}
+
+#orbit-launcher{
+  position:fixed;inset:0;z-index:100000;
+  display:flex;align-items:center;justify-content:center;
+  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+  pointer-events:none;opacity:0;
+  transition:opacity ${ANIM_MS}ms ease;
+}
+#orbit-launcher.is-open{
+  pointer-events:auto;opacity:1;
+}
+#orbit-launcher .ol-backdrop{
+  position:absolute;inset:0;
+  background:rgba(15,23,42,.48);
+  /* no backdrop-filter — main cause of open/close jank */
+  opacity:0;
+  transition:opacity ${ANIM_MS}ms ease;
+}
+#orbit-launcher.is-open .ol-backdrop{opacity:1}
+#orbit-launcher .ol-panel{
+  position:relative;
+  width:min(360px,92vw);
+  max-height:min(80vh,480px);
+  overflow:auto;
+  border-radius:16px;
+  padding:18px 18px 14px;
+  background:#f8fafc;
+  color:#0f172a;
+  border:1px solid rgba(15,23,42,.08);
+  box-shadow:0 16px 40px rgba(15,23,42,.22);
+  opacity:0;
+  transform:translateY(8px);
+  transition:opacity ${ANIM_MS}ms ease, transform ${ANIM_MS}ms ease;
+}
+#orbit-launcher.is-open .ol-panel{
+  opacity:1;
+  transform:translateY(0);
+}
+@media (prefers-color-scheme:dark){
+  #orbit-launcher .ol-panel{
+    background:#1e293b;
+    color:#f1f5f9;
+    border-color:rgba(148,163,184,.2);
+  }
+  #orbit-launcher .ol-backdrop{background:rgba(2,6,23,.62)}
+}
+@media (prefers-reduced-motion:reduce){
+  #orbit-launcher,
+  #orbit-launcher .ol-backdrop,
+  #orbit-launcher .ol-panel,
+  #orbit-launcher .ol-slider,
+  #orbit-launcher .ol-slider:before{transition:none !important}
+}
+#orbit-launcher .ol-title{margin:0 0 4px;font-size:1.1rem;font-weight:700}
+#orbit-launcher .ol-sub{margin:0 0 14px;font-size:12px;opacity:.65}
+#orbit-launcher .ol-row{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:10px 6px;border-top:1px solid rgba(148,163,184,.25);
+  border-radius:8px;margin:0 -6px;
+}
+#orbit-launcher .ol-row:first-of-type{border-top:none}
+#orbit-launcher .ol-name{font-size:14px;font-weight:600}
+#orbit-launcher .ol-id{font-size:11px;opacity:.55;font-weight:400}
+#orbit-launcher .ol-switch{position:relative;width:48px;height:28px;flex-shrink:0}
+#orbit-launcher .ol-switch input{opacity:0;width:0;height:0;position:absolute}
+#orbit-launcher .ol-slider{
+  position:absolute;cursor:pointer;inset:0;
+  background:#cbd5e1;border-radius:999px;
+  transition:background .2s ease;
+}
+#orbit-launcher .ol-slider:before{
+  position:absolute;content:"";
+  height:22px;width:22px;left:3px;bottom:3px;
+  background:#fff;border-radius:50%;
+  transition:transform .2s ease;
+  box-shadow:0 1px 4px rgba(0,0,0,.2);
+}
+#orbit-launcher .ol-switch input:checked+.ol-slider{background:#38bdf8}
+#orbit-launcher .ol-switch input:checked+.ol-slider:before{transform:translateX(20px)}
+#orbit-launcher .ol-switch input:focus-visible+.ol-slider{
+  outline:2px solid #38bdf8;outline-offset:2px;
+}
+#orbit-launcher .ol-foot{
+  margin-top:12px;font-size:12px;opacity:.55;
+  display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;
+}
+#orbit-launcher .ol-kbd{
+  font-family:ui-monospace,monospace;font-size:11px;
+  padding:1px 6px;border-radius:4px;background:rgba(148,163,184,.2);
+}
+#orbit-launcher .ol-empty{font-size:13px;opacity:.7;padding:8px 0}
+`;
+  document.head.appendChild(s);
+}
+
+/**
+ * @param {object} orbitApi
+ * @param {() => string} getLauncherKey
+ */
+function createLauncher(orbitApi, getLauncherKey) {
+  let open = false;
+  let root = null;
+  let listEl = null;
+  let bound = false;
+  let closeTimer = null;
+
+  function formatKey(key) {
+    return key || "Alt+O";
+  }
+
+  function ensureDom() {
+    ensureStyles();
+    if (root && document.body.contains(root)) return root;
+    root = document.getElementById(ROOT_ID);
+    if (!root) {
+      root = document.createElement("div");
+      root.id = ROOT_ID;
+      root.setAttribute("role", "dialog");
+      root.setAttribute("aria-modal", "true");
+      root.setAttribute("aria-label", "Orbit 组件管理");
+      root.setAttribute("aria-hidden", "true");
+      root.style.display = "none";
+      root.innerHTML =
+        '<div class="ol-backdrop" data-ol-close="1"></div>' +
+        '<div class="ol-panel" role="document">' +
+        '<h2 class="ol-title">Orbit 组件</h2>' +
+        '<p class="ol-sub">开关各悬浮 Widget 的显示</p>' +
+        '<div class="ol-list"></div>' +
+        '<div class="ol-foot" data-ol-foot></div>' +
+        "</div>";
+      document.body.appendChild(root);
+      root.addEventListener("click", function (e) {
+        const t = e.target;
+        if (t && t.getAttribute && t.getAttribute("data-ol-close")) {
+          setOpen(false);
+        }
+      });
+    }
+    listEl = root.querySelector(".ol-list");
+    return root;
+  }
+
+  function renderList() {
+    ensureDom();
+    const key = formatKey(getLauncherKey());
+    const foot = root.querySelector("[data-ol-foot]");
+    if (foot) {
+      if (isCoarsePointer()) {
+        foot.innerHTML =
+          "<span>长按悬浮球可再次打开</span><span>点遮罩关闭</span>";
+      } else {
+        foot.innerHTML =
+          '<span>快捷键 <span class="ol-kbd">' +
+          key +
+          "</span></span><span>Esc 关闭</span>";
+      }
+    }
+
+    const hosts = orbitApi.listHosts();
+    const state = {};
+    orbitApi.list().forEach(function (row) {
+      state[row.id] = row.visible;
+    });
+
+    if (!hosts.length) {
+      listEl.innerHTML = '<div class="ol-empty">当前没有已注册的 Widget</div>';
+      return;
+    }
+
+    listEl.innerHTML = hosts
+      .map(function (id) {
+        const on = state[id] !== false;
+        const label = LABELS[id] || id;
+        return (
+          '<div class="ol-row" data-id="' +
+          id +
+          '">' +
+          '<div><div class="ol-name">' +
+          label +
+          '</div><div class="ol-id">' +
+          id +
+          "</div></div>" +
+          '<label class="ol-switch" title="显示 / 隐藏">' +
+          '<input type="checkbox" data-ol-toggle="' +
+          id +
+          '"' +
+          (on ? " checked" : "") +
+          " />" +
+          '<span class="ol-slider"></span>' +
+          "</label></div>"
+        );
+      })
+      .join("");
+
+    listEl.querySelectorAll("[data-ol-toggle]").forEach(function (input) {
+      input.addEventListener("change", function () {
+        const id = input.getAttribute("data-ol-toggle");
+        orbitApi.setVisible(id, !!input.checked);
+      });
+    });
+  }
+
+  function setOpen(next) {
+    next = !!next;
+    ensureDom();
+    if (closeTimer) {
+      clearTimeout(closeTimer);
+      closeTimer = null;
+    }
+
+    if (next === open && next) {
+      renderList();
+      return open;
+    }
+
+    if (next) {
+      open = true;
+      root.style.display = "flex";
+      root.setAttribute("aria-hidden", "false");
+      renderList();
+      // single rAF is enough
+      requestAnimationFrame(function () {
+        root.classList.add("is-open");
+      });
+    } else {
+      open = false;
+      root.classList.remove("is-open");
+      root.setAttribute("aria-hidden", "true");
+      closeTimer = setTimeout(function () {
+        if (!open && root) root.style.display = "none";
+        closeTimer = null;
+      }, ANIM_MS + 20);
+    }
+    return open;
+  }
+
+  function toggle() {
+    return setOpen(!open);
+  }
+
+  function isOpen() {
+    return open;
+  }
+
+  function matchHotkey(e, keySpec) {
+    const spec = (keySpec || "Alt+O").toLowerCase().replace(/\s+/g, "");
+    const parts = spec.split("+");
+    const needAlt = parts.indexOf("alt") >= 0;
+    const needCtrl = parts.indexOf("ctrl") >= 0 || parts.indexOf("control") >= 0;
+    const needShift = parts.indexOf("shift") >= 0;
+    const needMeta = parts.indexOf("meta") >= 0 || parts.indexOf("cmd") >= 0;
+    const keyPart = parts[parts.length - 1];
+    if (!!e.altKey !== needAlt) return false;
+    if (!!e.ctrlKey !== needCtrl) return false;
+    if (!!e.shiftKey !== needShift) return false;
+    if (!!e.metaKey !== needMeta) return false;
+    const k = (e.key || "").toLowerCase();
+    if (keyPart === "o") return k === "o";
+    return k === keyPart;
+  }
+
+  function onKeyDown(e) {
+    if (e.key === "Escape" && open) {
+      e.preventDefault();
+      setOpen(false);
+      return;
+    }
+    if (matchHotkey(e, getLauncherKey())) {
+      e.preventDefault();
+      toggle();
+    }
+  }
+
+  function bind() {
+    if (bound || typeof document === "undefined") return;
+    bound = true;
+    document.addEventListener("keydown", onKeyDown, true);
+  }
+
+  function unbind() {
+    if (!bound) return;
+    document.removeEventListener("keydown", onKeyDown, true);
+    bound = false;
+  }
+
+  return {
+    toggle: toggle,
+    setOpen: setOpen,
+    isOpen: isOpen,
+    renderList: renderList,
+    bind: bind,
+    unbind: unbind,
+  };
+}
+
+if (typeof createLauncher !== 'undefined') __mod.createLauncher = createLauncher;
+
+};
+
+/* ---- src/core/LauncherHint.js ---- */
+__modules["src/core/LauncherHint.js"] = function (__mod, __require) {
+/**
+ * Orbit Phase C — one-time launcher hotkey hint when ≥2 widgets.
+ */
+
+const STYLE_ID = "orbit-launcher-hint-style";
+const STORAGE_KEY = "orbit-launcher-hint-v1";
+const HINT_ID = "orbit-launcher-hint";
+const SHOW_MS = 5200;
+
+function ensureStyles() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById(STYLE_ID)) return;
+  const s = document.createElement("style");
+  s.id = STYLE_ID;
+  s.textContent = `
+#orbit-launcher-hint{
+  position:fixed;z-index:100001;
+  right:16px;bottom:16px;
+  max-width:min(320px,calc(100vw - 32px));
+  padding:12px 14px;
+  border-radius:12px;
+  font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+  font-size:13px;line-height:1.45;
+  color:#0f172a;
+  background:#f8fafc;
+  border:1px solid rgba(15,23,42,.1);
+  box-shadow:0 12px 32px rgba(15,23,42,.18);
+  opacity:0;transform:translateY(8px);
+  transition:opacity .2s ease,transform .2s ease;
+  pointer-events:auto;
+}
+#orbit-launcher-hint.is-show{
+  opacity:1;transform:translateY(0);
+}
+@media (prefers-color-scheme:dark){
+  #orbit-launcher-hint{
+    color:#f1f5f9;background:#1e293b;
+    border-color:rgba(148,163,184,.25);
+  }
+}
+#orbit-launcher-hint .olh-row{display:flex;gap:10px;align-items:flex-start}
+#orbit-launcher-hint .olh-text{flex:1;min-width:0}
+#orbit-launcher-hint .olh-title{font-weight:700;margin:0 0 4px;font-size:13px}
+#orbit-launcher-hint .olh-body{margin:0;opacity:.8;font-size:12px}
+#orbit-launcher-hint .olh-kbd{
+  display:inline-block;font-family:ui-monospace,monospace;
+  font-size:11px;padding:1px 6px;border-radius:4px;
+  background:rgba(148,163,184,.25);
+}
+#orbit-launcher-hint .olh-close{
+  flex-shrink:0;border:0;background:transparent;cursor:pointer;
+  font-size:16px;line-height:1;opacity:.5;padding:0 2px;color:inherit;
+}
+#orbit-launcher-hint .olh-close:hover{opacity:.9}
+@media (prefers-reduced-motion:reduce){
+  #orbit-launcher-hint{transition:none}
+}
+`;
+  document.head.appendChild(s);
+}
+
+function storageGet() {
+  try {
+    return localStorage.getItem(STORAGE_KEY) === "1";
+  } catch (e) {
+    return false;
+  }
+}
+
+function storageSet() {
+  try {
+    localStorage.setItem(STORAGE_KEY, "1");
+  } catch (e) {}
+}
+
+/**
+ * @param {object} opts
+ * @param {() => string} opts.getLauncherKey
+ * @param {() => number} opts.getWidgetCount — registered hosts or visible instances
+ * @param {boolean} opts.enabled
+ */
+function maybeShowLauncherHint(opts) {
+  if (typeof document === "undefined") return;
+  if (!opts || opts.enabled === false) return;
+  if (storageGet()) return;
+  const n = typeof opts.getWidgetCount === "function" ? opts.getWidgetCount() : 0;
+  if (n < 2) return;
+
+  ensureStyles();
+  if (document.getElementById(HINT_ID)) return;
+
+  const key = (opts.getLauncherKey && opts.getLauncherKey()) || "Alt+O";
+  const coarse =
+    typeof window !== "undefined" &&
+    window.matchMedia &&
+    window.matchMedia("(pointer: coarse)").matches;
+  const el = document.createElement("div");
+  el.id = HINT_ID;
+  el.setAttribute("role", "status");
+  const body = coarse
+    ? "在手机上<strong>长按</strong>任意悬浮球（不要滑动）可打开管理面板，开关各组件。本提示只显示一次。"
+    : "按 <span class=\"olh-kbd\"></span> 可打开面板；手机可长按悬浮球。本提示只显示一次。";
+  el.innerHTML =
+    '<div class="olh-row">' +
+    '<div class="olh-text">' +
+    '<p class="olh-title">Orbit 组件管理</p>' +
+    '<p class="olh-body">' + body + "</p>" +
+    "</div>" +
+    '<button type="button" class="olh-close" aria-label="关闭">×</button>' +
+    "</div>";
+  const kbd = el.querySelector(".olh-kbd");
+  if (kbd) kbd.textContent = key;
+
+  function dismiss() {
+    storageSet();
+    el.classList.remove("is-show");
+    window.setTimeout(function () {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }, 200);
+  }
+
+  el.querySelector(".olh-close").addEventListener("click", dismiss);
+  document.body.appendChild(el);
+  requestAnimationFrame(function () {
+    el.classList.add("is-show");
+  });
+  window.setTimeout(dismiss, SHOW_MS);
+}
+function resetLauncherHintForDebug() {
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch (e) {}
+}
+
+if (typeof maybeShowLauncherHint !== 'undefined') __mod.maybeShowLauncherHint = maybeShowLauncherHint;
+if (typeof resetLauncherHintForDebug !== 'undefined') __mod.resetLauncherHintForDebug = resetLauncherHintForDebug;
+
+};
+
+/* ---- src/core/Orbit.js ---- */
+__modules["src/core/Orbit.js"] = function (__mod, __require) {
+var __dep0 = __require("src/core/WidgetRegistry.js");
+var registerWidget = __dep0.registerWidget;
+var getWidget = __dep0.getWidget;
+var listWidgets = __dep0.listWidgets;
+var mountWidget = __dep0.mountWidget;
+var __dep1 = __require("src/core/Launcher.js");
+var createLauncher = __dep1.createLauncher;
+var __dep2 = __require("src/core/LauncherHint.js");
+var maybeShowLauncherHint = __dep2.maybeShowLauncherHint;
+/**
+ * Orbit Runtime — Phase A + B
+ * A: multi-widget mount + visibility
+ * B: Launcher panel + hotkey (default Alt+O)
+ */
+
+
+
+/** @type {object | null} */
+let mountedConfig = null;
+/** @type {boolean} */
+let mounted = false;
+
+/** @type {Map<string, { start: Function, getRoot: Function }>} */
+const hostAdapters = new Map();
+
+/** @type {Map<string, { id: string, visible: boolean, started: boolean }>} */
+const instances = new Map();
+
+/** @type {Map<string, Set<Function>>} */
+const listeners = new Map();
+
+/** @type {ReturnType<typeof createLauncher> | null} */
+let launcher = null;
+
+const api = {
+  version: "0.2.0-c",
+  mount: mount,
+  list: list,
+  listRegistered: listRegistered,
+  listHosts: listHosts,
+  registerHost: registerHost,
+  setVisible: setVisible,
+  toggleLauncher: toggleLauncher,
+  openLauncher: openLauncher,
+  closeLauncher: closeLauncher,
+  on: on,
+  off: off,
+  registry: null,
+  isMounted: function () {
+    return mounted;
+  },
+  getConfig: function () {
+    return mountedConfig ? Object.assign({}, mountedConfig) : null;
+  },
+  getLauncherKey: getLauncherKey,
+};
+
+const Orbit = api;
+
+function emit(event, payload) {
+  const set = listeners.get(event);
+  if (!set) return;
+  set.forEach(function (fn) {
+    try {
+      fn(payload);
+    } catch (e) {
+      console.error("[Orbit] listener error", event, e);
+    }
+  });
+}
+
+function readPageConfig() {
+  if (typeof window === "undefined") return {};
+  const o = window.ORBIT;
+  return o && typeof o === "object" ? o : {};
+}
+
+function getLauncherKey() {
+  const cfg = mountedConfig || readPageConfig();
+  return (cfg && cfg.launcherKey) || "Alt+O";
+}
+
+function ensureLauncher() {
+  if (!launcher) {
+    launcher = createLauncher(api, getLauncherKey);
+  }
+  return launcher;
+}
+
+function registerHost(id, adapter) {
+  if (!id || !adapter || typeof adapter.start !== "function") {
+    throw new Error("registerHost requires id and start()");
+  }
+  hostAdapters.set(id, {
+    start: adapter.start,
+    getRoot:
+      typeof adapter.getRoot === "function"
+        ? adapter.getRoot
+        : function () {
+            return null;
+          },
+  });
+  return api;
+}
+
+function getOrCreateInstance(id) {
+  let inst = instances.get(id);
+  if (!inst) {
+    inst = { id: id, visible: false, started: false };
+    instances.set(id, inst);
+  }
+  return inst;
+}
+
+function applyDomVisibility(id, visible) {
+  const adapter = hostAdapters.get(id);
+  if (!adapter) return false;
+  const root = adapter.getRoot();
+  if (!root) return false;
+
+  if (root.classList) {
+    root.classList.remove("orbit-hiding", "orbit-showing");
+    if (visible) root.classList.remove("orbit-hidden");
+    else root.classList.add("orbit-hidden");
+  }
+
+  if (visible) {
+    root.style.display = "";
+    root.style.visibility = "";
+    root.style.opacity = "";
+    root.removeAttribute("hidden");
+    root.setAttribute("aria-hidden", "false");
+  } else {
+    root.style.display = "none";
+    root.setAttribute("aria-hidden", "true");
+  }
+
+  if (id === "music" && typeof document !== "undefined") {
+    const sheet = document.getElementById("mp-dock-list");
+    if (sheet && sheet.classList) {
+      if (visible) {
+        sheet.classList.remove("orbit-hidden");
+        sheet.style.display = "";
+      } else {
+        sheet.classList.add("orbit-hidden");
+        sheet.style.display = "none";
+      }
+    }
+  }
+  return true;
+}
+
+
+function ensureStarted(id) {
+  const adapter = hostAdapters.get(id);
+  if (!adapter) {
+    console.warn("[Orbit] no host registered for", id);
+    return false;
+  }
+  const inst = getOrCreateInstance(id);
+  if (!inst.started) {
+    adapter.start();
+    inst.started = true;
+  }
+  return true;
+}
+
+function setVisible(id, visible) {
+  if (!id) return api;
+  visible = !!visible;
+  const inst = getOrCreateInstance(id);
+
+  if (visible) {
+    ensureStarted(id);
+    inst.visible = true;
+    var tries = 0;
+    function paint() {
+      const ok = applyDomVisibility(id, true);
+      if (!ok && tries < 20) {
+        tries += 1;
+        setTimeout(paint, 50);
+      }
+    }
+    paint();
+  } else {
+    inst.visible = false;
+    if (inst.started) {
+      applyDomVisibility(id, false);
+    }
+  }
+
+  emit("visibilityChange", { id: id, visible: visible });
+  if (launcher && launcher.isOpen()) {
+    launcher.renderList();
+  }
+  return api;
+}
+
+function defaultWidgets() {
+  const ids = [];
+  hostAdapters.forEach(function (_a, id) {
+    ids.push({ id: id, visible: true });
+  });
+  return ids;
+}
+
+function mount(config) {
+  const page = readPageConfig();
+  const cfg = Object.assign({}, page, config || {});
+
+  if (!mounted) {
+    mountedConfig = cfg;
+    mounted = true;
+  } else if (config) {
+    mountedConfig = Object.assign({}, mountedConfig, config);
+  }
+
+  const widgets =
+    (mountedConfig &&
+      Array.isArray(mountedConfig.widgets) &&
+      mountedConfig.widgets.length &&
+      mountedConfig.widgets) ||
+    defaultWidgets();
+
+  widgets.forEach(function (w) {
+    if (!w || !w.id) return;
+    if (!hostAdapters.has(w.id)) return;
+    const vis = w.visible !== false;
+    setVisible(w.id, vis);
+  });
+
+  ensureLauncher().bind();
+
+  // Phase C: one-time hotkey tip when ≥2 hosts
+  try {
+    var hintEnabled = mountedConfig.launcherHint !== false;
+    maybeShowLauncherHint({
+      enabled: hintEnabled,
+      getLauncherKey: getLauncherKey,
+      getWidgetCount: function () {
+        return hostAdapters.size;
+      },
+    });
+  } catch (e) {}
+
+  emit("mount", { config: mountedConfig });
+  return api;
+}
+
+function list() {
+  const out = [];
+  instances.forEach(function (inst) {
+    out.push({ id: inst.id, visible: !!inst.visible });
+  });
+  return out;
+}
+
+function listRegistered() {
+  return listWidgets();
+}
+
+function listHosts() {
+  return Array.from(hostAdapters.keys());
+}
+
+function toggleLauncher() {
+  const L = ensureLauncher();
+  const open = L.toggle();
+  emit("launcherToggle", { open: open });
+  return api;
+}
+
+function openLauncher() {
+  ensureLauncher().setOpen(true);
+  emit("launcherToggle", { open: true });
+  return api;
+}
+
+function closeLauncher() {
+  ensureLauncher().setOpen(false);
+  emit("launcherToggle", { open: false });
+  return api;
+}
+
+function on(event, fn) {
+  if (!event || typeof fn !== "function") return api;
+  if (!listeners.has(event)) listeners.set(event, new Set());
+  listeners.get(event).add(fn);
+  return api;
+}
+
+function off(event, fn) {
+  const set = listeners.get(event);
+  if (set && fn) set.delete(fn);
+  return api;
+}
+
+api.registry = {
+  register: registerWidget,
+  get: getWidget,
+  list: listWidgets,
+  mountWidget: mountWidget,
+};
+__mod.Orbit = Orbit;
+__mod.mount = mount;
+__mod.list = list;
+__mod.setVisible = setVisible;
+__mod.toggleLauncher = toggleLauncher;
+__mod.registerHost = registerHost;
+__mod.on = on;
+__mod.off = off;
+__mod.registerWidget = registerWidget;
+__mod.getWidget = getWidget;
+__mod.listWidgets = listWidgets;
+__mod.mountWidget = mountWidget;
+
+__mod.default = Orbit;
+
+if (typeof Orbit !== 'undefined') __mod.Orbit = Orbit;
+if (typeof mount !== 'undefined') __mod.mount = mount;
+if (typeof list !== 'undefined') __mod.list = list;
+if (typeof setVisible !== 'undefined') __mod.setVisible = setVisible;
+if (typeof toggleLauncher !== 'undefined') __mod.toggleLauncher = toggleLauncher;
+if (typeof registerHost !== 'undefined') __mod.registerHost = registerHost;
+if (typeof on !== 'undefined') __mod.on = on;
+if (typeof off !== 'undefined') __mod.off = off;
+if (typeof registerWidget !== 'undefined') __mod.registerWidget = registerWidget;
+if (typeof getWidget !== 'undefined') __mod.getWidget = getWidget;
+if (typeof listWidgets !== 'undefined') __mod.listWidgets = listWidgets;
+if (typeof mountWidget !== 'undefined') __mod.mountWidget = mountWidget;
+
+};
+
 /* ---- src/interaction/Gesture.js ---- */
 __modules["src/interaction/Gesture.js"] = function (__mod, __require) {
 /**
@@ -2642,20 +3509,691 @@ if (typeof init !== 'undefined') __mod.init = init;
 
 };
 
-/* ---- src/entry-music.js ---- */
-__modules["src/entry-music.js"] = function (__mod, __require) {
-var __dep0 = __require("src/host/music-player-host.js");
-var startMusicPlayer = __dep0.startMusicPlayer;
+/* ---- src/widgets/clock/ClockWidget.js ---- */
+__modules["src/widgets/clock/ClockWidget.js"] = function (__mod, __require) {
+var __dep0 = __require("src/core/WidgetRegistry.js");
+var registerWidget = __dep0.registerWidget;
 /**
- * 浏览器打包入口（esbuild 会把它和依赖打成一个文件）
- * Hexo 只需引入 dist/floating-widget-music.js
+ * FWF Clock Widget — second official widget (Phase 5)
+ *
+ * Proves the Shell is not Music-only: same spatial interaction language,
+ * different content (time display).
  */
 
-// 允许在引入脚本前设置 window.FWF_MUSIC 覆盖默认歌单
-startMusicPlayer();
+/**
+ * Format helpers
+ */
+function pad(n) {
+  return n < 10 ? "0" + n : String(n);
+}
 
+function formatTime(d, withSeconds) {
+  const h = pad(d.getHours());
+  const m = pad(d.getMinutes());
+  if (!withSeconds) return h + ":" + m;
+  return h + ":" + m + ":" + pad(d.getSeconds());
+}
+
+function formatDate(d) {
+  const y = d.getFullYear();
+  const mo = pad(d.getMonth() + 1);
+  const day = pad(d.getDate());
+  const week = ["日", "一", "二", "三", "四", "五", "六"][d.getDay()];
+  return y + "-" + mo + "-" + day + " 周" + week;
+}
+
+/**
+ * @param {object} ctx
+ * @param {HTMLElement} ctx.root — floating root
+ * @param {object} [ctx.refs] — { face, panel, dateEl, fullTimeEl }
+ * @param {{ intervalMs?: number, showSeconds?: boolean }} [ctx.options]
+ */
+function mount(ctx) {
+  const root = ctx && ctx.root;
+  const refs = (ctx && ctx.refs) || {};
+  const options = (ctx && ctx.options) || {};
+  const intervalMs = options.intervalMs != null ? options.intervalMs : 1000;
+  const showSeconds = !!options.showSeconds;
+
+  let timer = null;
+
+  function tick() {
+    const now = new Date();
+    const t = formatTime(now, showSeconds);
+    if (refs.face) refs.face.textContent = t;
+    if (refs.fullTimeEl) refs.fullTimeEl.textContent = formatTime(now, true);
+    if (refs.dateEl) refs.dateEl.textContent = formatDate(now);
+    if (root) root.setAttribute("data-time", t);
+  }
+
+  function start() {
+    stop();
+    tick();
+    timer = setInterval(tick, intervalMs);
+  }
+
+  function stop() {
+    if (timer != null) {
+      clearInterval(timer);
+      timer = null;
+    }
+  }
+
+  function destroy() {
+    stop();
+  }
+
+  start();
+
+  return {
+    id: "clock",
+    tick: tick,
+    start: start,
+    stop: stop,
+    destroy: destroy,
+  };
+}
+
+registerWidget("clock", { mount: mount });
+
+
+if (typeof mount !== 'undefined') __mod.mount = mount;
 
 };
 
-__require("src/entry-music.js");
+/* ---- src/host/clock-host.js ---- */
+__modules["src/host/clock-host.js"] = function (__mod, __require) {
+var __dep0 = __require("src/interaction/Gesture.js");
+var createGesture = __dep0.createGesture;
+var __dep1 = __require("src/interaction/Drag.js");
+var createDrag = __dep1.createDrag;
+var __dep2 = __require("src/interaction/Snap.js");
+var createSnap = __dep2.createSnap;
+var __dep3 = __require("src/interaction/ExpandPolicy.js");
+var resolveExpandDirection = __dep3.resolveExpandDirection;
+var expandDownTranslateY = __dep3.expandDownTranslateY;
+var __dep4 = __require("src/widgets/clock/ClockWidget.js");
+var mount = __dep4.mount;
+/**
+ * FWF Clock Host — minimal floating shell + Clock widget
+ * Reuses Gesture / Drag / Snap (same interaction language as Music).
+ */
+
+
+
+
+
+const CONFIG = {
+  storageKey: "fwf-clock-pos-v1",
+  snapThreshold: 40,
+  snapRelease: 36,
+  snapThresholdMobile: 28,
+  snapReleaseMobile: 28,
+  longPressMs: 550,
+  clickThreshold: 12,
+  ballSize: 72,
+  ballSizeMobile: 56,
+  panelWidth: 200,
+  panelHeight: 84,
+};
+
+let root = null;
+let faceEl = null;
+let panelEl = null;
+let dateEl = null;
+let fullTimeEl = null;
+
+let posX = 0;
+let posY = 0;
+let isOpen = false;
+let isMobile = false;
+let dragging = false;
+let wasDragging = false;
+let lastDockSide = null;
+let originX = 0;
+let originY = 0;
+let startClientX = 0;
+let startClientY = 0;
+let expandLeft = false;
+let expandDown = false;
+
+let gesture = null;
+let drag = null;
+let snap = null;
+let clockApi = null;
+let eventsBound = false;
+
+function clamp(v, min, max) {
+  return Math.min(max, Math.max(min, v));
+}
+
+function loadPos() {
+  try {
+    const s = JSON.parse(localStorage.getItem(CONFIG.storageKey) || "{}");
+    if (s.x != null && s.y != null) {
+      posX = s.x;
+      posY = s.y;
+    }
+  } catch (e) {}
+}
+
+function savePos() {
+  try {
+    localStorage.setItem(
+      CONFIG.storageKey,
+      JSON.stringify({ x: posX, y: posY })
+    );
+  } catch (e) {}
+}
+
+function ballSizeNow() {
+  return isMobile || window.innerWidth <= 600
+    ? CONFIG.ballSizeMobile
+    : CONFIG.ballSize;
+}
+
+/**
+ * bottom 锚定的元素增高默认往上长；expand-down 时由 ExpandPolicy 给出 Y 补偿。
+ */
+function applyTransform() {
+  if (!root) return;
+  var y =
+    posY +
+    expandDownTranslateY(
+      isOpen,
+      expandDown,
+      ballSizeNow(),
+      CONFIG.panelHeight
+    );
+  root.style.transform = "translate(" + posX + "px," + y + "px)";
+}
+
+function clampPosition(x, y) {
+  if (!root) return [x, y];
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const w = isOpen ? CONFIG.panelWidth : root.offsetWidth || CONFIG.ballSize;
+  const h = root.offsetHeight || CONFIG.ballSize;
+  const style = getComputedStyle(root);
+  const leftBase = parseFloat(style.left) || 20;
+  const bottomBase = parseFloat(style.bottom) || 20;
+  const margin = 8;
+  const minX = margin - leftBase;
+  const maxX = vw - w - margin - leftBase;
+  const minY = -(vh - h - margin - bottomBase);
+  const maxY = margin - bottomBase;
+  return [clamp(x, minX, maxX), clamp(y, minY, maxY)];
+}
+
+/**
+ * Host only measures geometry + applies classes.
+ * Decision lives in ExpandPolicy (shared by any Widget).
+ */
+function updateExpandDirection(force) {
+  // 展开期间锁定方向，避免测量反馈导致抽搐
+  if (isOpen && !force) return;
+  if (!root || dragging) {
+    expandLeft = false;
+    expandDown = false;
+    root.classList.remove("expand-left", "expand-down");
+    return;
+  }
+
+  const rect = root.getBoundingClientRect();
+  const ballH = ballSizeNow();
+  const ballW = ballH; // clock ball is square
+  // When already open, recover approximate ball top for stable policy input
+  var absTop;
+  if (isOpen) {
+    absTop = expandDown ? rect.top : rect.bottom - ballH;
+  } else {
+    absTop = rect.top;
+  }
+  var absLeft = rect.left;
+  // When open + expand-left, rect.left is panel left; ball left ≈ rect.right - ballW
+  if (isOpen && expandLeft) {
+    absLeft = rect.right - ballW;
+  }
+
+  const result = resolveExpandDirection({
+    absLeft: absLeft,
+    absTop: absTop,
+    ballW: ballW,
+    ballH: ballH,
+    openW: CONFIG.panelWidth,
+    openH: CONFIG.panelHeight,
+    viewportW: window.innerWidth,
+    viewportH: window.innerHeight,
+    dockSide: lastDockSide,
+    pad: 12,
+  });
+
+  expandLeft = result.expandLeft;
+  expandDown = result.expandDown;
+  root.classList.toggle("expand-left", expandLeft);
+  root.classList.toggle("expand-down", expandDown);
+}
+
+function ensureSnap() {
+  if (snap) return snap;
+  snap = createSnap(
+    {
+      snapThreshold: CONFIG.snapThreshold,
+      snapRelease: CONFIG.snapRelease,
+      snapThresholdMobile: CONFIG.snapThresholdMobile,
+      snapReleaseMobile: CONFIG.snapReleaseMobile,
+      ballSize: CONFIG.ballSize,
+      ballSizeMobile: CONFIG.ballSizeMobile,
+    },
+    {
+      isMobile: function () {
+        return isMobile || window.innerWidth <= 600;
+      },
+      getRoot: function () {
+        return root;
+      },
+      getPosX: function () {
+        return posX;
+      },
+      getPosY: function () {
+        return posY;
+      },
+      setPosition: function (x, y) {
+        posX = x;
+        posY = y;
+        applyTransform();
+      },
+      clampPosition: clampPosition,
+      onSnapSide: function (side) {
+        lastDockSide = side;
+        if (root) {
+          root.classList.toggle("is-docked", !!side);
+          root.classList.toggle("dock-left", side === "left");
+          root.classList.toggle("dock-right", side === "right");
+        }
+        savePos();
+      },
+      onSnappingStart: function () {
+        if (root) root.classList.add("is-snapping");
+      },
+      onSnappingEnd: function () {
+        if (root) root.classList.remove("is-snapping");
+      },
+      onMagnetChange: function (side) {
+        if (!root) return;
+        if (side) {
+          root.classList.add("is-magnet");
+          root.classList.toggle("magnet-left", side === "left");
+          root.classList.toggle("magnet-right", side === "right");
+        } else {
+          root.classList.remove("is-magnet", "magnet-left", "magnet-right");
+        }
+      },
+    }
+  );
+  return snap;
+}
+
+function ensureDrag() {
+  if (drag) return drag;
+  drag = createDrag({
+    getPosition: function () {
+      return { x: posX, y: posY };
+    },
+    setPosition: function (x, y) {
+      posX = x;
+      posY = y;
+      applyTransform();
+    },
+    clampPosition: clampPosition,
+    applyMagneticX: function (freeX, clientX, session) {
+      return ensureSnap().applyMagneticX(freeX, clientX, session);
+    },
+  });
+  return drag;
+}
+
+function setOpen(open) {
+  open = !!open;
+  if (!root) {
+    isOpen = open;
+    return;
+  }
+  if (open === isOpen) return;
+
+  if (open) {
+    updateExpandDirection(true);
+    // 方向 class 先于 is-open，减少闪一帧错误方向
+    root.classList.toggle("expand-left", expandLeft);
+    root.classList.toggle("expand-down", expandDown);
+    isOpen = true;
+    root.classList.add("is-open");
+    applyTransform();
+  } else {
+    isOpen = false;
+    root.classList.remove("is-open");
+    applyTransform();
+    window.setTimeout(function () {
+      if (!isOpen && root) {
+        root.classList.remove("expand-left", "expand-down");
+        expandLeft = false;
+        expandDown = false;
+      }
+    }, 320);
+  }
+}
+
+function ensureGesture() {
+  if (gesture) return gesture;
+  gesture = createGesture(
+    {
+      longPressMs: CONFIG.longPressMs,
+      clickThreshold: CONFIG.clickThreshold,
+      longPressTapMax: 20,
+    },
+    {
+      onToggle: function () {
+        // Desktop: hover open/close. Mobile: tap toggle.
+        if (!isMobile) return;
+        setOpen(!isOpen);
+      },
+      onLongPressTap: function (e) {
+        // Mobile / touch: long-press stay → Orbit launcher
+        var touch =
+          (e && (e.pointerType === "touch" || e.pointerType === "pen")) ||
+          isMobile ||
+          window.innerWidth <= 600;
+        if (!touch) return;
+        if (window.Orbit && typeof window.Orbit.openLauncher === "function") {
+          window.Orbit.openLauncher();
+        }
+      },
+      onDragStart: function () {
+        wasDragging = true;
+        dragging = true;
+        setOpen(false);
+        // keep lastDockSide until snap decides; clear visual dock while free-dragging
+        if (root) {
+          root.classList.add("is-dragging");
+          root.classList.remove(
+            "is-docked",
+            "dock-left",
+            "dock-right",
+            "expand-left",
+            "expand-down"
+          );
+        }
+        lastDockSide = null;
+        expandLeft = false;
+        expandDown = false;
+        ensureDrag().begin({ x: posX, y: posY });
+        originX = posX;
+        originY = posY;
+        const pid = gesture.getActivePointer();
+        try {
+          if (root && pid != null) root.setPointerCapture(pid);
+        } catch (e) {}
+      },
+      isBlocked: function () {
+        return false;
+      },
+    }
+  );
+  return gesture;
+}
+
+function createDOM() {
+  let el = document.getElementById("fwf-clock");
+  if (el) {
+    if (!document.body.contains(el)) document.body.appendChild(el);
+    return el;
+  }
+  el = document.createElement("div");
+  el.id = "fwf-clock";
+  el.className = "fwf-clock";
+  el.style.cssText =
+    "position:fixed;left:20px;bottom:20px;z-index:99998;display:block;visibility:visible;opacity:1;pointer-events:auto;box-sizing:border-box";
+  el.innerHTML =
+    '<div class="fwf-clock-face" id="fwf-clock-face">--:--</div>' +
+    '<div class="fwf-clock-panel" id="fwf-clock-panel">' +
+    '<div class="fwf-clock-full" id="fwf-clock-full">--:--:--</div>' +
+    '<div class="fwf-clock-date" id="fwf-clock-date">—</div>' +
+    "</div>";
+  document.body.appendChild(el);
+  return el;
+}
+
+function endDragSession(commitSnap) {
+  const g = ensureGesture();
+  const d = ensureDrag();
+  const pid = g.getActivePointer();
+  document.removeEventListener("pointermove", onMove);
+  document.removeEventListener("pointerup", onUp);
+  document.removeEventListener("pointercancel", onUp);
+  if (pid != null && root) {
+    try {
+      if (root.hasPointerCapture && root.hasPointerCapture(pid)) {
+        root.releasePointerCapture(pid);
+      }
+    } catch (e) {}
+  }
+  const wasDrag = wasDragging || dragging || g.isDragging() || d.isActive();
+  g.cancel();
+  d.end();
+  dragging = false;
+  if (root) root.classList.remove("is-dragging");
+  if (wasDrag && commitSnap) ensureSnap().snapToEdge();
+  wasDragging = false;
+  return wasDrag;
+}
+
+function onDown(e) {
+  if (e.pointerType === "mouse" && e.button !== 0) return;
+  const g = ensureGesture();
+  if (g.getActivePointer() != null) return;
+  if (e.pointerType === "touch" || e.pointerType === "pen") {
+    try {
+      e.preventDefault();
+    } catch (err) {}
+  }
+  ensureSnap().clearMagnet();
+  wasDragging = false;
+  dragging = false;
+  const start = g.onPointerDown(e);
+  if (!start) return;
+  startClientX = start.startClientX;
+  startClientY = start.startClientY;
+  originX = posX;
+  originY = posY;
+  document.addEventListener("pointermove", onMove, { passive: false });
+  document.addEventListener("pointerup", onUp, { passive: false });
+  document.addEventListener("pointercancel", onUp, { passive: false });
+}
+
+function onMove(e) {
+  const g = ensureGesture();
+  const d = ensureDrag();
+  if (e.pointerType === "mouse" && e.buttons === 0) {
+    return endDragSession(true);
+  }
+  const phase = g.onPointerMove(e);
+  if (phase === "ignore") return;
+  if (g.isDragging()) {
+    dragging = true;
+    wasDragging = true;
+  }
+  const start = g.getStart();
+  startClientX = start.x;
+  startClientY = start.y;
+  if (!g.isDragging() && !d.isActive()) return;
+  e.preventDefault();
+  if (!d.isActive()) {
+    d.begin({ x: posX, y: posY });
+  }
+  d.move(e.clientX - startClientX, e.clientY - startClientY, e.clientX, {
+    startClientX: startClientX,
+    x: startClientX,
+  });
+}
+
+function onUp(e) {
+  const g = ensureGesture();
+  const pid = g.getActivePointer();
+  if (pid == null || e.pointerId !== pid) return;
+  const wasDrag = wasDragging || dragging || g.isDragging();
+  // Must handle toggle / long-press-tap BEFORE endDragSession → cancel()
+  if (!wasDrag) {
+    g.onPointerUp(e, { wasDragging: false, pointerId: pid });
+  }
+  endDragSession(true);
+  try {
+    e.preventDefault();
+    e.stopPropagation();
+  } catch (err) {}
+}
+
+function onDocPointerDown(e) {
+  // Mobile: tap outside to close. Desktop uses mouseleave.
+  if (!isMobile) return;
+  if (!isOpen || dragging) return;
+  if (root && root.contains(e.target)) return;
+  setOpen(false);
+}
+
+function onMouseEnter() {
+  if (isMobile || dragging) return;
+  setOpen(true);
+}
+
+function onMouseLeave(e) {
+  if (isMobile || dragging) return;
+  const related = e && e.relatedTarget;
+  if (related && root && root.contains(related)) return;
+  setOpen(false);
+}
+
+function bindEvents() {
+  if (!root || eventsBound) return;
+  eventsBound = true;
+  root.addEventListener("pointerdown", onDown);
+  root.addEventListener("click", function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  root.addEventListener("mouseenter", onMouseEnter);
+  root.addEventListener("mouseleave", onMouseLeave);
+  document.addEventListener("pointerdown", onDocPointerDown, true);
+  window.addEventListener("resize", function () {
+    isMobile = window.innerWidth <= 600;
+    const pair = clampPosition(posX, posY);
+    posX = pair[0];
+    posY = pair[1];
+    applyTransform();
+    if (isOpen) updateExpandDirection(true);
+  });
+}
+
+function init() {
+  if (!document.body) {
+    setTimeout(init, 50);
+    return;
+  }
+  isMobile = window.innerWidth <= 600;
+  loadPos();
+  root = createDOM();
+  faceEl = document.getElementById("fwf-clock-face");
+  panelEl = document.getElementById("fwf-clock-panel");
+  dateEl = document.getElementById("fwf-clock-date");
+  fullTimeEl = document.getElementById("fwf-clock-full");
+  applyTransform();
+  bindEvents();
+
+  // mount Clock widget content (must use name `mount` — bundler strips import aliases)
+  clockApi = mount({
+    root: root,
+    refs: {
+      face: faceEl,
+      panel: panelEl,
+      dateEl: dateEl,
+      fullTimeEl: fullTimeEl,
+    },
+    options: { intervalMs: 1000, showSeconds: false },
+  });
+}
+
+function boot() {
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+}
+function startClockWidget() {
+  boot();
+}
+__mod.boot = boot;
+__mod.init = init;
+
+if (typeof startClockWidget !== 'undefined') __mod.startClockWidget = startClockWidget;
+if (typeof boot !== 'undefined') __mod.boot = boot;
+if (typeof init !== 'undefined') __mod.init = init;
+
+};
+
+/* ---- src/entry-orbit.js ---- */
+__modules["src/entry-orbit.js"] = function (__mod, __require) {
+var __dep0 = __require("src/core/Orbit.js");
+var Orbit = __dep0.Orbit;
+var __dep1 = __require("src/host/music-player-host.js");
+var startMusicPlayer = __dep1.startMusicPlayer;
+var __dep2 = __require("src/host/clock-host.js");
+var startClockWidget = __dep2.startClockWidget;
+/**
+ * Orbit Runtime entry — Phase A
+ * Registers Music + Clock hosts, exposes window.Orbit, mounts from window.ORBIT.
+ *
+ * Single-widget pages should keep using entry-music / entry-clock.
+ * Multi-widget / Demo should use this bundle only (avoid double-start).
+ */
+
+
+
+Orbit.registerHost("music", {
+  start: function () {
+    startMusicPlayer();
+  },
+  getRoot: function () {
+    return document.getElementById("music-player");
+  },
+});
+
+Orbit.registerHost("clock", {
+  start: function () {
+    startClockWidget();
+  },
+  getRoot: function () {
+    return document.getElementById("fwf-clock");
+  },
+});
+
+if (typeof window !== "undefined") {
+  window.Orbit = Orbit;
+  const boot = function () {
+    Orbit.mount(
+      typeof window.ORBIT === "object" && window.ORBIT ? window.ORBIT : {}
+    );
+  };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
+}
+__mod.Orbit = Orbit;
+
+if (typeof Orbit !== 'undefined') __mod.Orbit = Orbit;
+
+};
+
+__require("src/entry-orbit.js");
 })();

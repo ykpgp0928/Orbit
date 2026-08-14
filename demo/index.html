@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>FWF Demo — Music + Clock（无 Hexo）</title>
+  <title>Orbit Demo — Music + Clock</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
   <link rel="stylesheet" href="../dist/floating-widget-music.css" />
   <link rel="stylesheet" href="../dist/floating-widget-clock.css" />
@@ -66,12 +66,12 @@
 </head>
 <body>
   <div class="wrap">
-    <div class="badge">FWF 0.1.0 · Phase 6 Demo</div>
-    <h1>Web Floating Widget Framework</h1>
+    <div class="badge">Orbit 0.2 · Demo</div>
+    <h1>Orbit — 多 Widget 总览</h1>
     <p>
       本页<strong>不依赖 Hexo</strong>。右下角附近会出现两个悬浮组件：
       <strong>Music</strong>（音乐球）与 <strong>Clock</strong>（时钟球）。
-      它们共用拖拽 / 吸附交互语言，内容不同。
+      它们由 <strong>Orbit</strong> 统一挂载，共用拖拽 / 吸附交互；可用管理面板控制显隐。
     </p>
 
     <div class="card">
@@ -80,6 +80,9 @@
         <li>拖动任一球体；靠近左右边缘松手应磁吸</li>
         <li>Music：桌面悬停展开控制条；移动端点按（视宽度）</li>
         <li>Clock：桌面移入展开、移出关闭；右吸附后应向左展开</li>
+        <li>按 <code>Alt+O</code> 打开组件管理面板（Esc 关闭）</li>
+        <li>首次进入且有 ≥2 个组件时，右下角会短暂提示快捷键（只一次）</li>
+        <li>控制台也可：<code>Orbit.toggleLauncher()</code>、<code>Orbit.setVisible('music', false)</code></li>
       </ul>
     </div>
 
@@ -93,14 +96,21 @@
   </div>
 
   <script>
-    // 可选：换成你的歌单 ID
     window.FWF_MUSIC = {
       server: "netease",
       type: "playlist",
       id: "3778678"
     };
+    // Phase A: 由 Orbit 统一挂载（勿再单独引入 music/clock 入口，以免双启动）
+    window.ORBIT = {
+      launcherKey: "Alt+O",
+      launcherHint: true,
+      widgets: [
+        { id: "music", visible: true },
+        { id: "clock", visible: true }
+      ]
+    };
   </script>
-  <script src="../dist/floating-widget-music.js" defer></script>
-  <script src="../dist/floating-widget-clock.js" defer></script>
+  <script src="../dist/orbit.js" defer></script>
 </body>
 </html>

@@ -46,6 +46,16 @@
 }
 
 /* ----- 根节点：固定悬浮球，默认收起为圆形 ----- */
+/* Orbit hide: overrides forced display:block !important */
+#music-player.orbit-hidden,
+#music-player.orbit-hidden #mp-dock-list,
+.mp-dock-list.orbit-hidden {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 #music-player {
   position: fixed !important;
   left: 20px !important;

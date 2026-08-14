@@ -23,7 +23,7 @@ const CONFIG = {
     snapRelease: 36,
     snapThresholdMobile: 28,
     snapReleaseMobile: 28,
-    longPressMs: 380,
+    longPressMs: 550,
     clickThreshold: 12,
     ballSize: 66,
     ballSizeMobile: 52
@@ -1111,11 +1111,25 @@ const CONFIG = {
   function ensureGesture() {
     if (gesture) return gesture;
     gesture = createGesture(
-      { longPressMs: CONFIG.longPressMs, clickThreshold: CONFIG.clickThreshold },
+      {
+        longPressMs: CONFIG.longPressMs,
+        clickThreshold: CONFIG.clickThreshold,
+        longPressTapMax: 20,
+      },
       {
         onToggle: function () {
           if (isMobile) toggleMobileBall();
           else togglePlay();
+        },
+        onLongPressTap: function (e) {
+          var touch =
+            (e && (e.pointerType === "touch" || e.pointerType === "pen")) ||
+            isMobile ||
+            window.innerWidth <= 600;
+          if (!touch) return;
+          if (window.Orbit && typeof window.Orbit.openLauncher === "function") {
+            window.Orbit.openLauncher();
+          }
         },
         onDragStart: function () {
           wasDragging = true;
@@ -1255,17 +1269,16 @@ const CONFIG = {
     if (pid == null || e.pointerId !== pid) return;
 
     var wasDrag = wasDragging || dragging || g.isDragging();
+    // Gesture cancel is inside endDragSession — resolve tap/long-press first
+    if (!wasDrag) {
+      g.onPointerUp(e, { wasDragging: false, pointerId: pid });
+    }
     endDragSession(true);
 
     try {
       e.preventDefault();
       e.stopPropagation();
     } catch (err) {}
-
-    if (wasDrag) return;
-
-    // toggle intent (dedupe + ghost guard inside Gesture)
-    g.onPointerUp(e, { wasDragging: false, pointerId: pid });
   }
 
 
@@ -1381,6 +1394,7 @@ const CONFIG = {
 
   function ensureVisibleOnScreen() {
     if (!root) return;
+    if (root.classList && root.classList.contains("orbit-hidden")) return;
     root.style.cssText += ";display:block;visibility:visible;opacity:1;pointer-events:auto;z-index:99999;";
     const fix = () => {
       const before = { x: posX, y: posY }, [nx, ny] = clampPosition(posX, posY);
