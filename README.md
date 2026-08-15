@@ -191,7 +191,6 @@ npm run prepare-site   # → site/ 供 Cloudflare 等静态部署
 | [docs/phase-s-orbit.md](docs/phase-s-orbit.md) ~ [phase-c](docs/phase-c-orbit.md) | 0.2 阶段记录 |
 | [docs/PUBLISH.md](docs/PUBLISH.md) | GitHub / npm |
 | [docs/v0.3-iteration.md](docs/v0.3-iteration.md) | **v0.3 迭代流程与清单** |
-| [docs/phase0-v0.3-freeze.md](docs/phase0-v0.3-freeze.md) | v0.3 Phase 0 基线冻结 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本记录 |
 
 ---
