@@ -32,10 +32,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/YOUR_USERNAME/floating-widget-framework.git"
+    "url": "git+https://github.com/ykpgp0928/orbit.git"
   },
   "bugs": {
-    "url": "https://github.com/YOUR_USERNAME/floating-widget-framework/issues"
+    "url": "https://github.com/ykpgp0928/orbit/issues"
   },
-  "homepage": "https://github.com/YOUR_USERNAME/floating-widget-framework#readme"
+  "homepage": "https://github.com/ykpgp0928/orbit#readme"
 }

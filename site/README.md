@@ -100,6 +100,16 @@ npx --yes serve -p 3456 .
 | 仅 Music | http://127.0.0.1:3456/test-dist.html |
 | 仅 Clock | http://127.0.0.1:3456/test-clock.html |
 
+
+### 在线演示
+
+以下域名均可访问（内容相同：首页入口、总览、仅 Music、仅 Clock）：
+
+- [https://orbit.ykpgp0928.dpdns.org](https://orbit.ykpgp0928.dpdns.org)
+- [https://fwf.ykpgp0928.dpdns.org](https://fwf.ykpgp0928.dpdns.org)
+- [https://floating-widget-framework.ykpgp0928.dpdns.org](https://floating-widget-framework.ykpgp0928.dpdns.org)
+
+
 ---
 
 ## 配置摘要
@@ -180,6 +190,7 @@ npm run prepare-site   # → site/ 供 Cloudflare 等静态部署
 | [docs/THEME.md](docs/THEME.md) | 主题变量 |
 | [docs/phase-s-orbit.md](docs/phase-s-orbit.md) ~ [phase-c](docs/phase-c-orbit.md) | 0.2 阶段记录 |
 | [docs/PUBLISH.md](docs/PUBLISH.md) | GitHub / npm |
+| [docs/v0.3-iteration.md](docs/v0.3-iteration.md) | **v0.3 迭代流程与清单** |
 | [CHANGELOG.md](CHANGELOG.md) | 版本记录 |
 
 ---

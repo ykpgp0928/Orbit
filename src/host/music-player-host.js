@@ -1027,11 +1027,10 @@ const CONFIG = {
     if (root) {
       if (isListOpen) {
         shellListClosing = false;
-        updateListDirection(); updateExpandDirection();
-        const list = $("#mp-list", root);
-        if (list) list.style.maxHeight = "0px";
+        // Direction first so list-up class is present before is-list-open paints
+        updateListDirection();
+        updateExpandDirection();
         shellSync();
-        if (list) { void list.offsetHeight; list.style.maxHeight = ""; }
       } else {
         closeListAnimated();
       }

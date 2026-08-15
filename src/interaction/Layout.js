@@ -119,7 +119,11 @@ export function createLayout(ctx) {
   }
 
   /**
-   * Mobile free PANEL open: clamp into view, expand side via ExpandPolicy.
+   * Mobile free PANEL open:
+   * 1) Prefer expand right if openW fits.
+   * 2) Else expand left (margin-left keeps ball edge).
+   * 3) If neither side fits, shift horizontally so the open card stays in the viewport.
+   * Vertical: clamp so open height stays on screen.
    */
   function prepareMobileOpen() {
     if (!ctx.getRoot() || !ctx.isMobile()) return;
@@ -133,29 +137,44 @@ export function createLayout(ctx) {
     const pad = 8;
     let absLeft = leftBase + ctx.getPosX();
 
-    // If neither side fits without move, shift so left-expand is possible
-    if (
-      absLeft + openW > vw - pad &&
-      absLeft + ballW - openW < pad
-    ) {
-      const minAbs = pad - ballW + openW;
-      const maxAbs = vw - pad - ballW;
-      const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-      absLeft = clamp(
-        Math.max(absLeft, minAbs),
-        Math.min(minAbs, maxAbs),
-        Math.max(minAbs, maxAbs)
-      );
+    const canExpandRight = absLeft + openW <= vw - pad;
+    const canExpandLeft = absLeft + ballW - openW >= pad;
+
+    let expandLeftFlag = false;
+
+    if (canExpandRight) {
+      expandLeftFlag = false;
+    } else if (canExpandLeft) {
+      expandLeftFlag = true;
+    } else {
+      // Neither side fits without moving — shift so open card is fully in view.
+      // Prefer left-expand when ball is on the right half; otherwise right-expand.
+      const ballCenter = absLeft + ballW / 2;
+      if (ballCenter >= vw / 2) {
+        expandLeftFlag = true;
+        // expand-left: card left ≈ absLeft + ballW - openW, right ≈ absLeft + ballW
+        const minAbs = pad - ballW + openW;
+        const maxAbs = vw - pad - ballW;
+        absLeft = Math.min(Math.max(absLeft, minAbs), Math.max(minAbs, maxAbs));
+      } else {
+        expandLeftFlag = false;
+        const minAbs = pad;
+        const maxAbs = vw - pad - openW;
+        absLeft = Math.min(Math.max(absLeft, minAbs), Math.max(minAbs, maxAbs));
+      }
       ctx.setPosition(absLeft - leftBase, ctx.getPosY());
     }
 
+    // Vertical clamp for open card height (ball width as footprint X)
     const [cx, cy] = ctx.clampPosition(
       ctx.getPosX(),
       ctx.getPosY(),
       ballW,
       openH
     );
-    ctx.setPosition(cx, cy);
+    if (cx !== ctx.getPosX() || cy !== ctx.getPosY()) {
+      ctx.setPosition(cx, cy);
+    }
     absLeft = leftBase + ctx.getPosX();
 
     const rect = root.getBoundingClientRect();
@@ -171,7 +190,8 @@ export function createLayout(ctx) {
       dockSide: null,
       pad: pad,
     });
-    setExpandLeft(result.expandLeft);
+    // Horizontal side already decided above; ExpandPolicy only for vertical
+    setExpandLeft(expandLeftFlag);
     setExpandDown(result.expandDown);
   }
 
@@ -182,10 +202,10 @@ export function createLayout(ctx) {
     const listH =
       parseInt(getComputedStyle(root).getPropertyValue("--mp-list-h"), 10) ||
       280;
+    // Default: expand list downward. If not enough space below → upward (bar stays).
     const spaceBelow = window.innerHeight - rect.bottom;
-    const spaceAbove = rect.top;
-    listUp = spaceBelow < listH + 16 && spaceAbove > spaceBelow;
-    if (ctx.sync) ctx.sync();
+    const need = listH + 16;
+    setListUp(spaceBelow < need);
   }
 
   function getListUp() {
@@ -194,6 +214,7 @@ export function createLayout(ctx) {
 
   function setListUp(v) {
     listUp = !!v;
+    if (ctx.onListUp) ctx.onListUp(listUp);
     if (ctx.sync) ctx.sync();
   }
 

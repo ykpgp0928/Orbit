@@ -234,7 +234,10 @@
 
 #music-player.expand-left.is-open {
   margin-left: calc(var(--mp-size) - var(--mp-width-open)) !important;
+  /* width + margin-left 同曲线，右缘近似不动 */
+  transition-property: width, height, border-radius, box-shadow, margin-left !important;
 }
+
 
 #music-player.is-dragging {
   margin-left: 0 !important;
@@ -244,8 +247,24 @@
   #music-player.is-open:not(.is-docked) .mp-main {
     flex-direction: column !important;
   }
+  /* 向左展开：容器右缘用 margin-left 锚定；封面在卡片内水平居中 */
   #music-player.is-open:not(.is-docked).expand-left {
     margin-left: calc(var(--mp-size) - min(72vw, 260px)) !important;
+  }
+  #music-player.is-open:not(.is-docked).expand-left .mp-main {
+    align-items: center !important;
+  }
+  #music-player.is-open:not(.is-docked).expand-left .mp-cover {
+    align-self: center !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+  }
+  #music-player.is-open:not(.is-docked).expand-left .mp-body {
+    width: 100% !important;
+    box-sizing: border-box !important;
+    padding: 0 10px 8px !important;
+    align-items: center !important;
+    text-align: center !important;
   }
 }
 
@@ -947,6 +966,30 @@
 }
 
 /* Mobile / narrow screen adjustments — no hover expand, only .is-open */
+/* Mobile open: lighter animation (avoid jank) */
+
+/* Mobile open: lighter animation (avoid jank) */
+@media (max-width: 600px) {
+  #music-player {
+    transition:
+      width 0.22s ease,
+      height 0.22s ease,
+      border-radius 0.2s ease,
+      box-shadow 0.2s ease !important;
+  }
+  #music-player .mp-body {
+    transition: opacity 0.18s ease, visibility 0.18s ease !important;
+  }
+  #music-player.is-open:not(.is-docked) {
+    backdrop-filter: blur(10px) saturate(140%) !important;
+    -webkit-backdrop-filter: blur(10px) saturate(140%) !important;
+  }
+  #music-player.is-open:not(.is-docked) .mp-main,
+  #music-player.is-open:not(.is-docked) .mp-cover {
+    transition: transform 0.22s ease !important;
+  }
+}
+
 @media (max-width: 600px) {
   :root {
     --mp-size: var(--mp-size-sm);
