@@ -1180,6 +1180,82 @@ if (typeof createAudioEngine !== 'undefined') __mod.createAudioEngine = createAu
 
 };
 
+/* ---- src/core/LifecycleScope.js ---- */
+__modules["src/core/LifecycleScope.js"] = function (__mod, __require) {
+/**
+ * Orbit v0.3 — LifecycleScope
+ *
+ * Per-instance cleanup bag. Register external side effects with add(fn);
+ * dispose() runs them in reverse order, idempotently.
+ * One failing cleanup must not block the rest.
+ */
+
+/**
+ * @returns {{
+ *   add: (fn: () => void | Promise<void>) => () => void,
+ *   dispose: (emitError?: (err: unknown) => void) => Promise<void>,
+ *   disposed: boolean
+ * }}
+ */
+function createLifecycleScope() {
+  let disposed = false;
+  /** @type {Set<() => void | Promise<void>>} */
+  const cleanups = new Set();
+
+  /**
+   * @param {() => void | Promise<void>} fn
+   * @returns {() => void} unregister (no-op if already disposed)
+   */
+  function add(fn) {
+    if (typeof fn !== "function") {
+      throw new Error("LifecycleScope.add requires a function");
+    }
+    if (disposed) {
+      Promise.resolve()
+        .then(fn)
+        .catch(function () {});
+      return function () {};
+    }
+    cleanups.add(fn);
+    return function remove() {
+      cleanups.delete(fn);
+    };
+  }
+
+  /**
+   * @param {(err: unknown) => void} [emitError]
+   */
+  async function dispose(emitError) {
+    if (disposed) return;
+    disposed = true;
+    const list = Array.from(cleanups).reverse();
+    cleanups.clear();
+    for (let i = 0; i < list.length; i++) {
+      try {
+        await list[i]();
+      } catch (error) {
+        if (typeof emitError === "function") {
+          try {
+            emitError(error);
+          } catch (_) {}
+        }
+      }
+    }
+  }
+
+  return {
+    add: add,
+    dispose: dispose,
+    get disposed() {
+      return disposed;
+    },
+  };
+}
+
+if (typeof createLifecycleScope !== 'undefined') __mod.createLifecycleScope = createLifecycleScope;
+
+};
+
 /* ---- src/host/music-player-host.js ---- */
 __modules["src/host/music-player-host.js"] = function (__mod, __require) {
 var __dep0 = __require("src/interaction/Gesture.js");
@@ -1194,9 +1270,12 @@ var __dep4 = __require("src/interaction/Layout.js");
 var createLayout = __dep4.createLayout;
 var __dep5 = __require("src/media/AudioEngine.js");
 var createAudioEngine = __dep5.createAudioEngine;
+var __dep6 = __require("src/core/LifecycleScope.js");
+var createLifecycleScope = __dep6.createLifecycleScope;
 /**
  * FWF Music Player Host（模块源码，请用 npm run build 打包后再给 Hexo 使用）
  */
+
 
 
 
@@ -1722,8 +1801,10 @@ const CONFIG = {
       panel.className = "mp-dock-list";
       panel.id = "mp-dock-list";
       panel.setAttribute("aria-hidden", "true");
+      panel.setAttribute("data-orbit-portal", "music-dock-list");
       panel.innerHTML = this.DOCK_LIST_HTML;
       mount.appendChild(panel);
+      if (typeof claimOwnedPortal === "function") claimOwnedPortal(panel);
       return panel;
     },
 
@@ -1949,18 +2030,7 @@ const CONFIG = {
 
 
 
-  /** 是否贴在左右吸附区（不依赖 is-docked class，避免竞态） */
-  function isNearDockEdge() {
-    if (!root) return null;
-    const { leftBase, w, leftX, rightX, vw } = getSnapTargets();
-    const { enter } = getSnapDistances();
-    const absLeft = leftBase + posX;
-    const absRight = absLeft + w;
-    const th = enter + 20;
-    if (absLeft < th || Math.abs(posX - leftX) < 10) return "left";
-    if (absRight > vw - th || Math.abs(posX - rightX) < 10) return "right";
-    return null;
-  }
+  // isNearDockEdge: use Snap module version above
 
   /** 理想贴边坐标（永远用 leftX/rightX，不用可能已被污染的 pos） */
   function idealDockPos(side) {
@@ -2362,6 +2432,8 @@ const CONFIG = {
     var g = ensureGesture();
     var d = ensureDrag();
     var pid = g.getActivePointer();
+    if (moveRaf) { cancelAnimationFrame(moveRaf); moveRaf = 0; }
+    pendingMove = null;
     document.removeEventListener("pointermove", onDocPointerMove);
     document.removeEventListener("pointerup", onDocPointerUp);
     document.removeEventListener("pointercancel", onDocPointerUp);
@@ -2421,7 +2493,22 @@ const CONFIG = {
     document.addEventListener("pointercancel", onDocPointerUp, { passive: false });
   }
 
+  var moveRaf = 0;
+  var pendingMove = null;
+  function flushPointerMove() {
+    moveRaf = 0;
+    var e = pendingMove;
+    pendingMove = null;
+    if (!e) return;
+    onDocPointerMoveNow(e);
+  }
   function onDocPointerMove(e) {
+    pendingMove = e;
+    if (!moveRaf) {
+      moveRaf = requestAnimationFrame(flushPointerMove);
+    }
+  }
+  function onDocPointerMoveNow(e) {
     var g = ensureGesture();
     var d = ensureDrag();
     if (e.pointerType === "mouse" && e.buttons === 0) {
@@ -2528,7 +2615,7 @@ const CONFIG = {
     if (r.progress) {
       r.progress.addEventListener("click", (e) => {
         e.stopPropagation();
-        seek((e.clientX - r.progress.getBoundingClientRect().left) / r.progress.getBoundingClientRect().width);
+        var pr = r.progress.getBoundingClientRect(); seek((e.clientX - pr.left) / (pr.width || 1));
       });
     }
 
@@ -2569,6 +2656,20 @@ const CONFIG = {
   }
 
   let initialized = false, eventsBound = false;
+  let lifecycle = null;
+  let bodyObserver = null;
+  let ownedPortals = [];
+  let onPjaxComplete = null;
+  function claimOwnedPortal(el) {
+    if (el && ownedPortals.indexOf(el) < 0) ownedPortals.push(el);
+  }
+  function releaseOwnedPortals() {
+    for (var i = 0; i < ownedPortals.length; i++) {
+      var el = ownedPortals[i];
+      try { if (el && el.parentNode) el.parentNode.removeChild(el); } catch (err) {}
+    }
+    ownedPortals = [];
+  }
 
   /** @type {ReturnType<typeof Template.bindRefs> | null} */
   let refs = null;
@@ -2603,6 +2704,9 @@ const CONFIG = {
 
   async function init() {
     if (!document.body) return setTimeout(init, 50);
+    if (!lifecycle || lifecycle.disposed) {
+      lifecycle = createLifecycleScope();
+    }
     isMobile = window.innerWidth <= 600;
     loadPersisted();
     // Phase 2: mount shell via Template
@@ -2638,27 +2742,107 @@ const CONFIG = {
       if (listInner) listInner.innerHTML = '<div class="mp-empty">歌单加载失败</div>';
     }
 
-    new MutationObserver(() => {
+    if (bodyObserver) {
+      try { bodyObserver.disconnect(); } catch (e) {}
+      bodyObserver = null;
+    }
+    bodyObserver = new MutationObserver(() => {
+      if (lifecycle && lifecycle.disposed) return;
       const existing = document.getElementById("music-player");
-      if (!existing || !document.body.contains(existing)) { if (root) { document.body.appendChild(root); ensureVisibleOnScreen(); } else init(); }
-    }).observe(document.body, { childList: true });
+      if (!existing || !document.body.contains(existing)) {
+        if (root) { document.body.appendChild(root); ensureVisibleOnScreen(); }
+        else init();
+      }
+    });
+    bodyObserver.observe(document.body, { childList: true });
   }
 
   function boot() {
-    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
-    document.addEventListener("pjax:complete", () => { setTimeout(() => { if (!document.getElementById("music-player")) { initialized = false; eventsBound = false; init(); } else ensureVisibleOnScreen(); }, 30); });
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init, { once: true });
+    else init();
+    if (!onPjaxComplete) {
+      onPjaxComplete = function () {
+        setTimeout(function () {
+          if (!document.getElementById("music-player")) {
+            initialized = false;
+            eventsBound = false;
+            init();
+          } else ensureVisibleOnScreen();
+        }, 30);
+      };
+      document.addEventListener("pjax:complete", onPjaxComplete);
+    }
+  }
+
+  /**
+   * Phase 3 — destroy (idempotent). Cleans audio, observer, owned portals, root.
+   * Does not remove foreign #mp-dock-list nodes we did not create.
+   */
+  function destroyMusicPlayer() {
+    try {
+      if (musicEngine && typeof musicEngine.destroy === "function") musicEngine.destroy();
+    } catch (e) {}
+    musicEngine = null;
+    audio = null;
+
+    if (bodyObserver) {
+      try { bodyObserver.disconnect(); } catch (e) {}
+      bodyObserver = null;
+    }
+
+    if (onPjaxComplete) {
+      try { document.removeEventListener("pjax:complete", onPjaxComplete); } catch (e) {}
+      onPjaxComplete = null;
+    }
+
+    releaseOwnedPortals();
+
+    if (root && root.parentNode) {
+      try { root.parentNode.removeChild(root); } catch (e) {}
+    }
+    var stray = document.getElementById("music-player");
+    if (stray && stray.parentNode) {
+      try { stray.parentNode.removeChild(stray); } catch (e) {}
+    }
+
+    if (lifecycle && !lifecycle.disposed) {
+      try { lifecycle.dispose(); } catch (e) {}
+    }
+    lifecycle = null;
+
+    root = null;
+    coverEl = null;
+    refs = null;
+    initialized = false;
+    eventsBound = false;
+    isOpen = false;
+    isListOpen = false;
+    isDockListOpen = false;
+    playlist = [];
   }
 
 /** 启动播放器（打包后会自动调用） */
 function startMusicPlayer() {
   boot();
+  if (typeof window !== "undefined") {
+    window.__FWF_MUSIC_API__ = {
+      start: startMusicPlayer,
+      destroy: destroyMusicPlayer,
+    };
+  }
+}
+function destroyMusicPlayerExport() {
+  destroyMusicPlayer();
 }
 __mod.boot = boot;
 __mod.init = init;
+__mod.destroyMusicPlayer = destroyMusicPlayer;
 
 if (typeof startMusicPlayer !== 'undefined') __mod.startMusicPlayer = startMusicPlayer;
+if (typeof destroyMusicPlayerExport !== 'undefined') __mod.destroyMusicPlayerExport = destroyMusicPlayerExport;
 if (typeof boot !== 'undefined') __mod.boot = boot;
 if (typeof init !== 'undefined') __mod.init = init;
+if (typeof destroyMusicPlayer !== 'undefined') __mod.destroyMusicPlayer = destroyMusicPlayer;
 
 };
 

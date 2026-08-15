@@ -46,14 +46,24 @@
 }
 
 /* ----- 根节点：固定悬浮球，默认收起为圆形 ----- */
-/* Orbit hide: overrides forced display:block !important */
+/* Orbit hide/show animation */
+#music-player,
+.mp-dock-list {
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s ease,
+    visibility 0.22s ease;
+}
 #music-player.orbit-hidden,
-#music-player.orbit-hidden #mp-dock-list,
 .mp-dock-list.orbit-hidden {
-  display: none !important;
-  visibility: hidden !important;
   opacity: 0 !important;
+  visibility: hidden !important;
   pointer-events: none !important;
+  transform: scale(0.92) !important;
+}
+#music-player.orbit-hidden-final,
+.mp-dock-list.orbit-hidden-final {
+  display: none !important;
 }
 
 #music-player {

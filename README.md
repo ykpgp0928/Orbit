@@ -2,14 +2,12 @@
 
 **在任意网页上挂载可拖拽、可吸附的悬浮组件。**
 
-官网：[https://orbit.ykpgp0928.dpdns.org](https://orbit.ykpgp0928.dpdns.org)
-
 对外品牌：**Orbit**  
 技术说明：Floating Widget Runtime（原 FWF）  
-当前版本：**0.2.1**（多 Widget + Launcher）
+当前版本：**0.3.0**（生命周期 · Launcher · ghost 恢复）
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.1-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.0-green.svg)](CHANGELOG.md)
 
 > English: Orbit is a tiny floating-widget runtime for static sites (Hexo, etc.). Shared drag / snap / expand; Music and Clock are the first widgets. Multi-widget pages use `dist/orbit.js` and a launcher panel.
 
@@ -103,11 +101,17 @@ npx --yes serve -p 3456 .
 | 仅 Clock | http://127.0.0.1:3456/test-clock.html |
 
 
-### 在线演示
+### 官网与在线演示
 
-以下域名均可访问（内容相同：首页入口、总览、仅 Music、仅 Clock）：
-- [https://fwf.ykpgp0928.dpdns.org](https://fwf.ykpgp0928.dpdns.org)
-- [https://floating-widget-framework.ykpgp0928.dpdns.org](https://floating-widget-framework.ykpgp0928.dpdns.org)
+- **官网：** [https://orbit.ykpgp0928.dpdns.org/](https://orbit.ykpgp0928.dpdns.org/)
+- **测试 / Demo 页：** [https://orbit.ykpgp0928.dpdns.org/demo](https://orbit.ykpgp0928.dpdns.org/demo)（Music + Clock + Orbit Launcher）
+
+备用域名（内容通常同步）：
+
+- https://fwf.ykpgp0928.dpdns.org  
+- https://floating-widget-framework.ykpgp0928.dpdns.org
+
+
 ---
 
 ## 配置摘要
@@ -189,6 +193,8 @@ npm run prepare-site   # → site/ 供 Cloudflare 等静态部署
 | [docs/phase-s-orbit.md](docs/phase-s-orbit.md) ~ [phase-c](docs/phase-c-orbit.md) | 0.2 阶段记录 |
 | [docs/PUBLISH.md](docs/PUBLISH.md) | GitHub / npm |
 | [docs/v0.3-iteration.md](docs/v0.3-iteration.md) | **v0.3 迭代流程与清单** |
+| [docs/MIGRATION-v0.3.md](docs/MIGRATION-v0.3.md) | 0.2 → 0.3 迁移 |
+| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 二次开发 / Widget 约定 |
 | [docs/phase0-v0.3-freeze.md](docs/phase0-v0.3-freeze.md) | v0.3 Phase 0 基线冻结 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本记录 |
 
@@ -196,6 +202,7 @@ npm run prepare-site   # → site/ 供 Cloudflare 等静态部署
 
 ## 版本与许可
 
+- **0.3.x**：destroy / LifecycleScope、ghost fallback、CI
 - **0.2.x**：Orbit 多 Widget、Launcher、移动端长按  
 - **0.1.x**：单文件 Music / Clock 成品  
 - 许可：**MIT** — [LICENSE](LICENSE)

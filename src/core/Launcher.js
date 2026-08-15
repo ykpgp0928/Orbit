@@ -30,9 +30,14 @@ function ensureStyles() {
   s.textContent = `
 /* Force-hide any Orbit-managed root (Music CSS uses display:block !important) */
 .orbit-hidden{
-  display:none !important;
+  opacity:0 !important;
   visibility:hidden !important;
   pointer-events:none !important;
+  transform:scale(0.92);
+  transition:opacity .22s ease, transform .22s ease, visibility .22s ease !important;
+}
+.orbit-hidden-final{
+  display:none !important;
 }
 
 #orbit-launcher{
@@ -88,6 +93,10 @@ function ensureStyles() {
   #orbit-launcher .ol-slider:before{transition:none !important}
 }
 #orbit-launcher .ol-title{margin:0 0 4px;font-size:1.1rem;font-weight:700}
+#orbit-launcher .ol-title:focus{outline:none}
+#orbit-launcher .ol-title:focus-visible{outline:2px solid #38bdf8;outline-offset:2px}
+#orbit-launcher .ol-panel:focus{outline:none}
+
 #orbit-launcher .ol-sub{margin:0 0 14px;font-size:12px;opacity:.65}
 #orbit-launcher .ol-row{
   display:flex;align-items:center;justify-content:space-between;gap:12px;
@@ -139,6 +148,8 @@ export function createLauncher(orbitApi, getLauncherKey) {
   let listEl = null;
   let bound = false;
   let closeTimer = null;
+  /** @type {HTMLElement | null} */
+  let lastTrigger = null;
 
   function formatKey(key) {
     return key || "Alt+O";
@@ -159,7 +170,7 @@ export function createLauncher(orbitApi, getLauncherKey) {
       root.innerHTML =
         '<div class="ol-backdrop" data-ol-close="1"></div>' +
         '<div class="ol-panel" role="document">' +
-        '<h2 class="ol-title">Orbit 组件</h2>' +
+        '<h2 class="ol-title" tabindex="-1">Orbit 组件</h2>' +
         '<p class="ol-sub">开关各悬浮 Widget 的显示</p>' +
         '<div class="ol-list"></div>' +
         '<div class="ol-foot" data-ol-foot></div>' +
@@ -236,7 +247,56 @@ export function createLauncher(orbitApi, getLauncherKey) {
     });
   }
 
-  function setOpen(next) {
+  function getFocusables() {
+    if (!root) return [];
+    const panel = root.querySelector(".ol-panel");
+    if (!panel) return [];
+    const sel =
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+    return Array.prototype.slice.call(panel.querySelectorAll(sel)).filter(
+      function (el) {
+        return !el.disabled && el.offsetParent !== null;
+      }
+    );
+  }
+
+  function focusOnOpen() {
+    const title = root && root.querySelector(".ol-title");
+    if (title && typeof title.focus === "function") {
+      try {
+        title.focus();
+        return;
+      } catch (e) {}
+    }
+    const list = getFocusables();
+    if (list.length) {
+      try {
+        list[0].focus();
+      } catch (e) {}
+    }
+  }
+
+  function restoreFocus() {
+    const t = lastTrigger;
+    lastTrigger = null;
+    if (t && typeof t.focus === "function" && document.contains(t)) {
+      try {
+        t.focus();
+        return;
+      } catch (e) {}
+    }
+    if (document.body && document.body.focus) {
+      try {
+        document.body.focus();
+      } catch (e) {}
+    }
+  }
+
+  /**
+   * @param {boolean} next
+   * @param {HTMLElement | Event | null} [trigger]
+   */
+  function setOpen(next, trigger) {
     next = !!next;
     ensureDom();
     if (closeTimer) {
@@ -250,13 +310,21 @@ export function createLauncher(orbitApi, getLauncherKey) {
     }
 
     if (next) {
+      if (trigger && trigger.nodeType === 1) lastTrigger = trigger;
+      else if (
+        typeof document !== "undefined" &&
+        document.activeElement &&
+        document.activeElement !== document.body
+      ) {
+        lastTrigger = document.activeElement;
+      }
       open = true;
       root.style.display = "flex";
       root.setAttribute("aria-hidden", "false");
       renderList();
-      // single rAF is enough
       requestAnimationFrame(function () {
         root.classList.add("is-open");
+        focusOnOpen();
       });
     } else {
       open = false;
@@ -265,13 +333,14 @@ export function createLauncher(orbitApi, getLauncherKey) {
       closeTimer = setTimeout(function () {
         if (!open && root) root.style.display = "none";
         closeTimer = null;
+        restoreFocus();
       }, ANIM_MS + 20);
     }
     return open;
   }
 
-  function toggle() {
-    return setOpen(!open);
+  function toggle(trigger) {
+    return setOpen(!open, trigger);
   }
 
   function isOpen() {
@@ -296,6 +365,23 @@ export function createLauncher(orbitApi, getLauncherKey) {
   }
 
   function onKeyDown(e) {
+    if (open && e.key === "Tab") {
+      const list = getFocusables();
+      if (list.length) {
+        const first = list[0];
+        const last = list[list.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+          return;
+        }
+        if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+          return;
+        }
+      }
+    }
     if (e.key === "Escape" && open) {
       e.preventDefault();
       setOpen(false);

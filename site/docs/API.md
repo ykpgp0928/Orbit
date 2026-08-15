@@ -1,4 +1,4 @@
-# Orbit / FWF 公开 API（v0.2）
+# Orbit / FWF 公开 API（v0.3 Phase 4）
 
 > 交付形态：浏览器单文件。  
 > **多 Widget** 用 `dist/orbit.js`；**单 Widget** 用 music / clock 独立包。
@@ -47,7 +47,10 @@
 | `openLauncher()` / `closeLauncher()` | 开 / 关面板 |
 | `getLauncherKey()` | 当前快捷键文案 |
 | `on` / `off` | 事件（如 `visibilityChange`） |
-| `version` | 如 `0.2.0-c` |
+| `version` | 如 `0.3.0-phase4` |
+| `destroy(id)` | **显式销毁**（配置里省略 id 不会销毁） |
+| `get(id)` | 实例快照 |
+| `register(definition)` | Widget 定义注册 |
 
 ### 1.3 `window.ORBIT` 配置
 

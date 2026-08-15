@@ -1,7 +1,7 @@
 {
   "name": "floating-widget-framework",
-  "version": "0.2.0",
-  "description": "Orbit — floating widget runtime (Music & Clock) for Hexo and static pages",
+  "version": "0.3.0",
+  "description": "Orbit — floating widget runtime (Music & Clock) with lifecycle, launcher, and multi-widget orchestration",
   "license": "MIT",
   "author": "",
   "keywords": [
@@ -28,14 +28,20 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "prepare-site": "node scripts/build.mjs && node scripts/prepare-site.mjs",
-    "prepublishOnly": "node scripts/build.mjs"
+    "prepublishOnly": "node scripts/build.mjs",
+    "test:unit": "node --test src/core/LifecycleScope.test.js src/core/WidgetRegistry.test.js src/interaction/ExpandPolicy.test.js",
+    "test": "npm run test:unit && npm run test:normalize",
+    "test:normalize": "node src/core/state.normalize.test.js",
+    "check:dist": "node scripts/check-dist-sync.mjs",
+    "ci": "npm run build && npm run test:unit && npm run check:dist"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ykpgp0928/orbit.git"
+    "url": "git+https://github.com/ykpgp0928/Orbit.git"
   },
   "bugs": {
-    "url": "https://github.com/ykpgp0928/orbit/issues"
+    "url": "https://github.com/ykpgp0928/Orbit/issues"
   },
-  "homepage": "https://github.com/ykpgp0928/orbit#readme"
+  "homepage": "https://orbit.ykpgp0928.dpdns.org/",
+  "type": "module"
 }

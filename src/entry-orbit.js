@@ -1,13 +1,17 @@
 /**
- * Orbit Runtime entry — Phase A
- * Registers Music + Clock hosts, exposes window.Orbit, mounts from window.ORBIT.
- *
- * Single-widget pages should keep using entry-music / entry-clock.
- * Multi-widget / Demo should use this bundle only (avoid double-start).
+ * Orbit Runtime entry — Phase 4
+ * Registers Music + Clock with destroy + visibility targets (no Runtime id hardcode).
  */
 import { Orbit } from "./core/Orbit.js";
-import { startMusicPlayer } from "./host/music-player-host.js";
-import { startClockWidget } from "./host/clock-host.js";
+import {
+  startMusicPlayer,
+  destroyMusicPlayer,
+} from "./host/music-player-host.js";
+import {
+  startClockWidget,
+  destroyClockWidget,
+  getClockRoot,
+} from "./host/clock-host.js";
 
 Orbit.registerHost("music", {
   start: function () {
@@ -16,6 +20,25 @@ Orbit.registerHost("music", {
   getRoot: function () {
     return document.getElementById("music-player");
   },
+  destroy: function () {
+    destroyMusicPlayer();
+  },
+  getVisibilityTargets: function () {
+    const nodes = [];
+    const root = document.getElementById("music-player");
+    if (root) nodes.push(root);
+    // Only portals marked as ours (Phase 3 ownership); fallback id for single-instance pages
+    const marked = document.querySelectorAll(
+      '[data-orbit-portal="music-dock-list"]'
+    );
+    if (marked && marked.length) {
+      for (let i = 0; i < marked.length; i++) nodes.push(marked[i]);
+    } else {
+      const sheet = document.getElementById("mp-dock-list");
+      if (sheet) nodes.push(sheet);
+    }
+    return nodes;
+  },
 });
 
 Orbit.registerHost("clock", {
@@ -23,7 +46,10 @@ Orbit.registerHost("clock", {
     startClockWidget();
   },
   getRoot: function () {
-    return document.getElementById("fwf-clock");
+    return getClockRoot() || document.getElementById("fwf-clock");
+  },
+  destroy: function () {
+    destroyClockWidget();
   },
 });
 

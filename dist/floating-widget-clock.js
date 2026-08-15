@@ -645,24 +645,34 @@ if (typeof expandDownTranslateY !== 'undefined') __mod.expandDownTranslateY = ex
 /* ---- src/core/WidgetRegistry.js ---- */
 __modules["src/core/WidgetRegistry.js"] = function (__mod, __require) {
 /**
- * Orbit / FWF Core — WidgetRegistry (subsystem)
+ * Orbit / FWF Core — WidgetRegistry (Definition Registry)
  *
- * Holds widget *definitions* (id → { mount }).
- * Public app code should prefer window.Orbit / Orbit.registry, not this module alone.
- * Runtime hosts (Phase A+) mount instances via Orbit; definitions stay here.
+ * Holds widget *definitions* only (id → definition).
+ * Live instances belong to Orbit Instance Registry (v0.3+).
+ * Legacy: registerWidget(id, { mount }) still valid.
  */
 
 const registry = Object.create(null);
 
 /**
  * @param {string} id
- * @param {{ mount: Function, unmount?: Function }} widget
+ * @param {{ mount: Function, label?: string, version?: string, defaults?: object, unmount?: Function }} widget
  */
 function registerWidget(id, widget) {
-  if (!id || !widget || typeof widget.mount !== "function") {
-    throw new Error("registerWidget requires id and mount()");
+  if (!id || typeof id !== "string") {
+    throw new Error("registerWidget requires a non-empty string id");
   }
-  registry[id] = widget;
+  if (!widget || typeof widget.mount !== "function") {
+    throw new Error("registerWidget requires mount()");
+  }
+  registry[id] = {
+    id: id,
+    label: typeof widget.label === "string" && widget.label ? widget.label : id,
+    version: widget.version,
+    defaults: widget.defaults,
+    mount: widget.mount,
+    unmount: widget.unmount,
+  };
 }
 
 /**
@@ -681,7 +691,7 @@ function listWidgets() {
 
 /**
  * @param {string} id
- * @param {object} ctx — shell refs, storage, emit, etc.
+ * @param {object} ctx
  */
 function mountWidget(id, ctx) {
   const w = getWidget(id);
@@ -689,10 +699,20 @@ function mountWidget(id, ctx) {
   return w.mount(ctx);
 }
 
+/**
+ * Test / advanced: clear all definitions (not for production page use).
+ */
+function _resetRegistryForTests() {
+  for (const k of Object.keys(registry)) {
+    delete registry[k];
+  }
+}
+
 if (typeof registerWidget !== 'undefined') __mod.registerWidget = registerWidget;
 if (typeof getWidget !== 'undefined') __mod.getWidget = getWidget;
 if (typeof listWidgets !== 'undefined') __mod.listWidgets = listWidgets;
 if (typeof mountWidget !== 'undefined') __mod.mountWidget = mountWidget;
+if (typeof _resetRegistryForTests !== 'undefined') __mod._resetRegistryForTests = _resetRegistryForTests;
 
 };
 
@@ -788,6 +808,82 @@ if (typeof mount !== 'undefined') __mod.mount = mount;
 
 };
 
+/* ---- src/core/LifecycleScope.js ---- */
+__modules["src/core/LifecycleScope.js"] = function (__mod, __require) {
+/**
+ * Orbit v0.3 — LifecycleScope
+ *
+ * Per-instance cleanup bag. Register external side effects with add(fn);
+ * dispose() runs them in reverse order, idempotently.
+ * One failing cleanup must not block the rest.
+ */
+
+/**
+ * @returns {{
+ *   add: (fn: () => void | Promise<void>) => () => void,
+ *   dispose: (emitError?: (err: unknown) => void) => Promise<void>,
+ *   disposed: boolean
+ * }}
+ */
+function createLifecycleScope() {
+  let disposed = false;
+  /** @type {Set<() => void | Promise<void>>} */
+  const cleanups = new Set();
+
+  /**
+   * @param {() => void | Promise<void>} fn
+   * @returns {() => void} unregister (no-op if already disposed)
+   */
+  function add(fn) {
+    if (typeof fn !== "function") {
+      throw new Error("LifecycleScope.add requires a function");
+    }
+    if (disposed) {
+      Promise.resolve()
+        .then(fn)
+        .catch(function () {});
+      return function () {};
+    }
+    cleanups.add(fn);
+    return function remove() {
+      cleanups.delete(fn);
+    };
+  }
+
+  /**
+   * @param {(err: unknown) => void} [emitError]
+   */
+  async function dispose(emitError) {
+    if (disposed) return;
+    disposed = true;
+    const list = Array.from(cleanups).reverse();
+    cleanups.clear();
+    for (let i = 0; i < list.length; i++) {
+      try {
+        await list[i]();
+      } catch (error) {
+        if (typeof emitError === "function") {
+          try {
+            emitError(error);
+          } catch (_) {}
+        }
+      }
+    }
+  }
+
+  return {
+    add: add,
+    dispose: dispose,
+    get disposed() {
+      return disposed;
+    },
+  };
+}
+
+if (typeof createLifecycleScope !== 'undefined') __mod.createLifecycleScope = createLifecycleScope;
+
+};
+
 /* ---- src/host/clock-host.js ---- */
 __modules["src/host/clock-host.js"] = function (__mod, __require) {
 var __dep0 = __require("src/interaction/Gesture.js");
@@ -801,10 +897,13 @@ var resolveExpandDirection = __dep3.resolveExpandDirection;
 var expandDownTranslateY = __dep3.expandDownTranslateY;
 var __dep4 = __require("src/widgets/clock/ClockWidget.js");
 var mount = __dep4.mount;
+var __dep5 = __require("src/core/LifecycleScope.js");
+var createLifecycleScope = __dep5.createLifecycleScope;
 /**
  * FWF Clock Host — minimal floating shell + Clock widget
  * Reuses Gesture / Drag / Snap (same interaction language as Music).
  */
+
 
 
 
@@ -849,6 +948,8 @@ let drag = null;
 let snap = null;
 let clockApi = null;
 let eventsBound = false;
+let lifecycle = null;
+let booted = false;
 
 function clamp(v, min, max) {
   return Math.min(max, Math.max(min, v));
@@ -1154,6 +1255,11 @@ function endDragSession(commitSnap) {
   const g = ensureGesture();
   const d = ensureDrag();
   const pid = g.getActivePointer();
+  if (moveRaf) {
+    cancelAnimationFrame(moveRaf);
+    moveRaf = 0;
+  }
+  pendingMove = null;
   document.removeEventListener("pointermove", onMove);
   document.removeEventListener("pointerup", onUp);
   document.removeEventListener("pointercancel", onUp);
@@ -1197,7 +1303,20 @@ function onDown(e) {
   document.addEventListener("pointercancel", onUp, { passive: false });
 }
 
+let moveRaf = 0;
+let pendingMove = null;
+function flushMove() {
+  moveRaf = 0;
+  const e = pendingMove;
+  pendingMove = null;
+  if (!e) return;
+  onMoveNow(e);
+}
 function onMove(e) {
+  pendingMove = e;
+  if (!moveRaf) moveRaf = requestAnimationFrame(flushMove);
+}
+function onMoveNow(e) {
   const g = ensureGesture();
   const d = ensureDrag();
   if (e.pointerType === "mouse" && e.buttons === 0) {
@@ -1259,25 +1378,109 @@ function onMouseLeave(e) {
   setOpen(false);
 }
 
+function onRootClick(e) {
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+function onResize() {
+  isMobile = window.innerWidth <= 600;
+  const pair = clampPosition(posX, posY);
+  posX = pair[0];
+  posY = pair[1];
+  applyTransform();
+  if (isOpen) updateExpandDirection(true);
+}
+
 function bindEvents() {
   if (!root || eventsBound) return;
   eventsBound = true;
   root.addEventListener("pointerdown", onDown);
-  root.addEventListener("click", function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-  });
+  root.addEventListener("click", onRootClick);
   root.addEventListener("mouseenter", onMouseEnter);
   root.addEventListener("mouseleave", onMouseLeave);
   document.addEventListener("pointerdown", onDocPointerDown, true);
-  window.addEventListener("resize", function () {
-    isMobile = window.innerWidth <= 600;
-    const pair = clampPosition(posX, posY);
-    posX = pair[0];
-    posY = pair[1];
-    applyTransform();
-    if (isOpen) updateExpandDirection(true);
-  });
+  window.addEventListener("resize", onResize);
+
+  if (lifecycle) {
+    lifecycle.add(function () {
+      if (!root) return;
+      root.removeEventListener("pointerdown", onDown);
+      root.removeEventListener("click", onRootClick);
+      root.removeEventListener("mouseenter", onMouseEnter);
+      root.removeEventListener("mouseleave", onMouseLeave);
+      document.removeEventListener("pointerdown", onDocPointerDown, true);
+      window.removeEventListener("resize", onResize);
+      eventsBound = false;
+    });
+  }
+}
+
+function resetHostState() {
+  root = null;
+  faceEl = null;
+  panelEl = null;
+  dateEl = null;
+  fullTimeEl = null;
+  clockApi = null;
+  gesture = null;
+  drag = null;
+  snap = null;
+  eventsBound = false;
+  dragging = false;
+  wasDragging = false;
+  isOpen = false;
+  lastDockSide = null;
+  expandLeft = false;
+  expandDown = false;
+  booted = false;
+}
+
+/**
+ * WidgetInstance-style destroy (Phase 2). Idempotent.
+ */
+function destroyClockWidget() {
+  if (lifecycle && !lifecycle.disposed) {
+    // dispose is async but cleanups are sync — fire and clear
+    lifecycle.dispose();
+  }
+  lifecycle = null;
+
+  if (clockApi && typeof clockApi.destroy === "function") {
+    try {
+      clockApi.destroy();
+    } catch (e) {}
+  }
+  clockApi = null;
+
+  if (eventsBound && root) {
+    try {
+      root.removeEventListener("pointerdown", onDown);
+      root.removeEventListener("click", onRootClick);
+      root.removeEventListener("mouseenter", onMouseEnter);
+      root.removeEventListener("mouseleave", onMouseLeave);
+    } catch (e) {}
+    try {
+      document.removeEventListener("pointerdown", onDocPointerDown, true);
+      window.removeEventListener("resize", onResize);
+    } catch (e) {}
+    eventsBound = false;
+  }
+
+  if (root && root.parentNode) {
+    try {
+      root.parentNode.removeChild(root);
+    } catch (e) {}
+  }
+  // remove stray by id
+  const stray = typeof document !== "undefined" && document.getElementById("fwf-clock");
+  if (stray && stray.parentNode) {
+    try {
+      stray.parentNode.removeChild(stray);
+    } catch (e) {}
+  }
+
+  resetHostState();
 }
 
 function init() {
@@ -1285,6 +1488,16 @@ function init() {
     setTimeout(init, 50);
     return;
   }
+  // Idempotent: already mounted
+  if (root && document.body.contains(root) && clockApi) {
+    return;
+  }
+  // After destroy, allow full remount
+  if (root && !document.body.contains(root)) {
+    resetHostState();
+  }
+
+  lifecycle = createLifecycleScope();
   isMobile = window.innerWidth <= 600;
   loadPos();
   root = createDOM();
@@ -1295,7 +1508,6 @@ function init() {
   applyTransform();
   bindEvents();
 
-  // mount Clock widget content (must use name `mount` — bundler strips import aliases)
   clockApi = mount({
     root: root,
     refs: {
@@ -1306,24 +1518,71 @@ function init() {
     },
     options: { intervalMs: 1000, showSeconds: false },
   });
+
+  lifecycle.add(function () {
+    if (clockApi && typeof clockApi.destroy === "function") {
+      clockApi.destroy();
+    }
+    clockApi = null;
+  });
+
+  lifecycle.add(function () {
+    if (root && root.parentNode) {
+      root.parentNode.removeChild(root);
+    }
+    const stray = document.getElementById("fwf-clock");
+    if (stray && stray.parentNode) stray.parentNode.removeChild(stray);
+  });
+
+  booted = true;
 }
 
 function boot() {
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
+    document.addEventListener("DOMContentLoaded", init, { once: true });
   } else {
     init();
   }
 }
 function startClockWidget() {
   boot();
+  if (typeof window !== "undefined") {
+    window.__FWF_CLOCK__ = {
+      start: startClockWidget,
+      destroy: destroyClockWidget,
+      getRoot: getClockRoot,
+      getInstance: getClockInstance,
+    };
+  }
+}
+
+/** @returns {HTMLElement | null} */
+function getClockRoot() {
+  return root;
+}
+
+/**
+ * WidgetInstance shape for Orbit / tests
+ * @returns {{ id: string, root: HTMLElement | null, destroy: Function }}
+ */
+function getClockInstance() {
+  return {
+    id: "clock",
+    root: root,
+    destroy: destroyClockWidget,
+  };
 }
 __mod.boot = boot;
 __mod.init = init;
+__mod.destroy = destroyClockWidget;
 
+if (typeof destroyClockWidget !== 'undefined') __mod.destroyClockWidget = destroyClockWidget;
 if (typeof startClockWidget !== 'undefined') __mod.startClockWidget = startClockWidget;
+if (typeof getClockRoot !== 'undefined') __mod.getClockRoot = getClockRoot;
+if (typeof getClockInstance !== 'undefined') __mod.getClockInstance = getClockInstance;
 if (typeof boot !== 'undefined') __mod.boot = boot;
 if (typeof init !== 'undefined') __mod.init = init;
+if (typeof destroy !== 'undefined') __mod.destroy = destroy;
 
 };
 
@@ -1331,11 +1590,23 @@ if (typeof init !== 'undefined') __mod.init = init;
 __modules["src/entry-clock.js"] = function (__mod, __require) {
 var __dep0 = __require("src/host/clock-host.js");
 var startClockWidget = __dep0.startClockWidget;
+var destroyClockWidget = __dep0.destroyClockWidget;
+var getClockRoot = __dep0.getClockRoot;
+var getClockInstance = __dep0.getClockInstance;
 /**
  * Clock widget entry — bundle to dist/floating-widget-clock.js
  */
 
 startClockWidget();
+
+if (typeof window !== "undefined") {
+  window.__FWF_CLOCK__ = {
+    start: startClockWidget,
+    destroy: destroyClockWidget,
+    getRoot: getClockRoot,
+    getInstance: getClockInstance,
+  };
+}
 
 
 };

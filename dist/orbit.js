@@ -16,24 +16,34 @@ function __require(k) {
 /* ---- src/core/WidgetRegistry.js ---- */
 __modules["src/core/WidgetRegistry.js"] = function (__mod, __require) {
 /**
- * Orbit / FWF Core — WidgetRegistry (subsystem)
+ * Orbit / FWF Core — WidgetRegistry (Definition Registry)
  *
- * Holds widget *definitions* (id → { mount }).
- * Public app code should prefer window.Orbit / Orbit.registry, not this module alone.
- * Runtime hosts (Phase A+) mount instances via Orbit; definitions stay here.
+ * Holds widget *definitions* only (id → definition).
+ * Live instances belong to Orbit Instance Registry (v0.3+).
+ * Legacy: registerWidget(id, { mount }) still valid.
  */
 
 const registry = Object.create(null);
 
 /**
  * @param {string} id
- * @param {{ mount: Function, unmount?: Function }} widget
+ * @param {{ mount: Function, label?: string, version?: string, defaults?: object, unmount?: Function }} widget
  */
 function registerWidget(id, widget) {
-  if (!id || !widget || typeof widget.mount !== "function") {
-    throw new Error("registerWidget requires id and mount()");
+  if (!id || typeof id !== "string") {
+    throw new Error("registerWidget requires a non-empty string id");
   }
-  registry[id] = widget;
+  if (!widget || typeof widget.mount !== "function") {
+    throw new Error("registerWidget requires mount()");
+  }
+  registry[id] = {
+    id: id,
+    label: typeof widget.label === "string" && widget.label ? widget.label : id,
+    version: widget.version,
+    defaults: widget.defaults,
+    mount: widget.mount,
+    unmount: widget.unmount,
+  };
 }
 
 /**
@@ -52,7 +62,7 @@ function listWidgets() {
 
 /**
  * @param {string} id
- * @param {object} ctx — shell refs, storage, emit, etc.
+ * @param {object} ctx
  */
 function mountWidget(id, ctx) {
   const w = getWidget(id);
@@ -60,10 +70,20 @@ function mountWidget(id, ctx) {
   return w.mount(ctx);
 }
 
+/**
+ * Test / advanced: clear all definitions (not for production page use).
+ */
+function _resetRegistryForTests() {
+  for (const k of Object.keys(registry)) {
+    delete registry[k];
+  }
+}
+
 if (typeof registerWidget !== 'undefined') __mod.registerWidget = registerWidget;
 if (typeof getWidget !== 'undefined') __mod.getWidget = getWidget;
 if (typeof listWidgets !== 'undefined') __mod.listWidgets = listWidgets;
 if (typeof mountWidget !== 'undefined') __mod.mountWidget = mountWidget;
+if (typeof _resetRegistryForTests !== 'undefined') __mod._resetRegistryForTests = _resetRegistryForTests;
 
 };
 
@@ -101,9 +121,14 @@ function ensureStyles() {
   s.textContent = `
 /* Force-hide any Orbit-managed root (Music CSS uses display:block !important) */
 .orbit-hidden{
-  display:none !important;
+  opacity:0 !important;
   visibility:hidden !important;
   pointer-events:none !important;
+  transform:scale(0.92);
+  transition:opacity .22s ease, transform .22s ease, visibility .22s ease !important;
+}
+.orbit-hidden-final{
+  display:none !important;
 }
 
 #orbit-launcher{
@@ -159,6 +184,10 @@ function ensureStyles() {
   #orbit-launcher .ol-slider:before{transition:none !important}
 }
 #orbit-launcher .ol-title{margin:0 0 4px;font-size:1.1rem;font-weight:700}
+#orbit-launcher .ol-title:focus{outline:none}
+#orbit-launcher .ol-title:focus-visible{outline:2px solid #38bdf8;outline-offset:2px}
+#orbit-launcher .ol-panel:focus{outline:none}
+
 #orbit-launcher .ol-sub{margin:0 0 14px;font-size:12px;opacity:.65}
 #orbit-launcher .ol-row{
   display:flex;align-items:center;justify-content:space-between;gap:12px;
@@ -210,6 +239,8 @@ function createLauncher(orbitApi, getLauncherKey) {
   let listEl = null;
   let bound = false;
   let closeTimer = null;
+  /** @type {HTMLElement | null} */
+  let lastTrigger = null;
 
   function formatKey(key) {
     return key || "Alt+O";
@@ -230,7 +261,7 @@ function createLauncher(orbitApi, getLauncherKey) {
       root.innerHTML =
         '<div class="ol-backdrop" data-ol-close="1"></div>' +
         '<div class="ol-panel" role="document">' +
-        '<h2 class="ol-title">Orbit 组件</h2>' +
+        '<h2 class="ol-title" tabindex="-1">Orbit 组件</h2>' +
         '<p class="ol-sub">开关各悬浮 Widget 的显示</p>' +
         '<div class="ol-list"></div>' +
         '<div class="ol-foot" data-ol-foot></div>' +
@@ -307,7 +338,56 @@ function createLauncher(orbitApi, getLauncherKey) {
     });
   }
 
-  function setOpen(next) {
+  function getFocusables() {
+    if (!root) return [];
+    const panel = root.querySelector(".ol-panel");
+    if (!panel) return [];
+    const sel =
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+    return Array.prototype.slice.call(panel.querySelectorAll(sel)).filter(
+      function (el) {
+        return !el.disabled && el.offsetParent !== null;
+      }
+    );
+  }
+
+  function focusOnOpen() {
+    const title = root && root.querySelector(".ol-title");
+    if (title && typeof title.focus === "function") {
+      try {
+        title.focus();
+        return;
+      } catch (e) {}
+    }
+    const list = getFocusables();
+    if (list.length) {
+      try {
+        list[0].focus();
+      } catch (e) {}
+    }
+  }
+
+  function restoreFocus() {
+    const t = lastTrigger;
+    lastTrigger = null;
+    if (t && typeof t.focus === "function" && document.contains(t)) {
+      try {
+        t.focus();
+        return;
+      } catch (e) {}
+    }
+    if (document.body && document.body.focus) {
+      try {
+        document.body.focus();
+      } catch (e) {}
+    }
+  }
+
+  /**
+   * @param {boolean} next
+   * @param {HTMLElement | Event | null} [trigger]
+   */
+  function setOpen(next, trigger) {
     next = !!next;
     ensureDom();
     if (closeTimer) {
@@ -321,13 +401,21 @@ function createLauncher(orbitApi, getLauncherKey) {
     }
 
     if (next) {
+      if (trigger && trigger.nodeType === 1) lastTrigger = trigger;
+      else if (
+        typeof document !== "undefined" &&
+        document.activeElement &&
+        document.activeElement !== document.body
+      ) {
+        lastTrigger = document.activeElement;
+      }
       open = true;
       root.style.display = "flex";
       root.setAttribute("aria-hidden", "false");
       renderList();
-      // single rAF is enough
       requestAnimationFrame(function () {
         root.classList.add("is-open");
+        focusOnOpen();
       });
     } else {
       open = false;
@@ -336,13 +424,14 @@ function createLauncher(orbitApi, getLauncherKey) {
       closeTimer = setTimeout(function () {
         if (!open && root) root.style.display = "none";
         closeTimer = null;
+        restoreFocus();
       }, ANIM_MS + 20);
     }
     return open;
   }
 
-  function toggle() {
-    return setOpen(!open);
+  function toggle(trigger) {
+    return setOpen(!open, trigger);
   }
 
   function isOpen() {
@@ -367,6 +456,23 @@ function createLauncher(orbitApi, getLauncherKey) {
   }
 
   function onKeyDown(e) {
+    if (open && e.key === "Tab") {
+      const list = getFocusables();
+      if (list.length) {
+        const first = list[0];
+        const last = list[list.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+          return;
+        }
+        if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+          return;
+        }
+      }
+    }
     if (e.key === "Escape" && open) {
       e.preventDefault();
       setOpen(false);
@@ -545,6 +651,131 @@ if (typeof resetLauncherHintForDebug !== 'undefined') __mod.resetLauncherHintFor
 
 };
 
+/* ---- src/core/LauncherFallback.js ---- */
+__modules["src/core/LauncherFallback.js"] = function (__mod, __require) {
+/**
+ * Orbit Phase 5 — mobile zero-visible fallback entry (ghost)
+ * Not a Widget: no drag, not in Launcher list, no position storage.
+ */
+
+const STYLE_ID = "orbit-fallback-style";
+const BTN_ID = "orbit-launcher-fallback";
+
+function ensureStyles() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById(STYLE_ID)) return;
+  const s = document.createElement("style");
+  s.id = STYLE_ID;
+  s.textContent = `
+#${BTN_ID}{
+  position:fixed;
+  right:max(12px, env(safe-area-inset-right));
+  bottom:max(12px, env(safe-area-inset-bottom));
+  z-index:99990;
+  width:48px;height:48px;min-width:44px;min-height:44px;
+  border:none;border-radius:999px;
+  padding:0;margin:0;
+  cursor:pointer;
+  background:rgba(15,23,42,.72);
+  color:#f8fafc;
+  font-size:18px;line-height:1;
+  box-shadow:0 4px 16px rgba(0,0,0,.25);
+  display:flex;
+  align-items:center;justify-content:center;
+  -webkit-tap-highlight-color:transparent;
+  opacity:0;
+  visibility:hidden;
+  pointer-events:none;
+  transform:scale(0.85);
+  transition:opacity .22s ease, transform .22s ease, visibility .22s ease;
+}
+#${BTN_ID}.is-visible{
+  opacity:1;
+  visibility:visible;
+  pointer-events:auto;
+  transform:scale(1);
+}
+#${BTN_ID}:focus-visible{
+  outline:2px solid #38bdf8;outline-offset:3px;
+}
+@media (prefers-color-scheme:light){
+  #${BTN_ID}{background:rgba(15,23,42,.82)}
+}
+`;
+  document.head.appendChild(s);
+}
+
+function isCoarsePointer() {
+  if (typeof window === "undefined") return false;
+  try {
+    if (window.matchMedia && window.matchMedia("(pointer: coarse)").matches) {
+      return true;
+    }
+  } catch (e) {}
+  return window.innerWidth <= 600;
+}
+
+/**
+ * @param {object} orbitApi
+ * @param {() => string} getMode — 'ghost' | 'host-button' | 'none'
+ */
+function createLauncherFallback(orbitApi, getMode) {
+  let btn = null;
+
+  function visibleWidgetCount() {
+    const rows = orbitApi.list() || [];
+    let n = 0;
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i].visible) n += 1;
+    }
+    return n;
+  }
+
+  function ensureBtn() {
+    ensureStyles();
+    if (btn && document.body.contains(btn)) return btn;
+    btn = document.getElementById(BTN_ID);
+    if (!btn) {
+      btn = document.createElement("button");
+      btn.id = BTN_ID;
+      btn.type = "button";
+      btn.setAttribute("aria-label", "管理 Orbit 组件");
+      btn.title = "管理 Orbit 组件";
+      btn.textContent = "◎";
+      btn.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (orbitApi.openLauncher) {
+          orbitApi.openLauncher(btn);
+        } else if (orbitApi.toggleLauncher) {
+          orbitApi.toggleLauncher();
+        }
+      });
+      document.body.appendChild(btn);
+    }
+    return btn;
+  }
+
+  function sync() {
+    const mode = (getMode && getMode()) || "ghost";
+    if (mode === "none" || mode === "host-button") {
+      if (btn) btn.classList.remove("is-visible");
+      return;
+    }
+    // ghost: only coarse + zero visible widgets
+    const show = isCoarsePointer() && visibleWidgetCount() === 0;
+    const el = ensureBtn();
+    if (show) el.classList.add("is-visible");
+    else el.classList.remove("is-visible");
+  }
+
+  return { sync: sync, ensureBtn: ensureBtn };
+}
+
+if (typeof createLauncherFallback !== 'undefined') __mod.createLauncherFallback = createLauncherFallback;
+
+};
+
 /* ---- src/core/Orbit.js ---- */
 __modules["src/core/Orbit.js"] = function (__mod, __require) {
 var __dep0 = __require("src/core/WidgetRegistry.js");
@@ -556,11 +787,20 @@ var __dep1 = __require("src/core/Launcher.js");
 var createLauncher = __dep1.createLauncher;
 var __dep2 = __require("src/core/LauncherHint.js");
 var maybeShowLauncherHint = __dep2.maybeShowLauncherHint;
+var __dep3 = __require("src/core/LauncherFallback.js");
+var createLauncherFallback = __dep3.createLauncherFallback;
 /**
- * Orbit Runtime — Phase A + B
- * A: multi-widget mount + visibility
- * B: Launcher panel + hotkey (default Alt+O)
+ * Orbit Runtime — Phase 4 API surface
+ *
+ * Public: mount, register, list, get, setVisible, destroy,
+ *         open/close/toggleLauncher, on/off, registerHost (legacy)
+ *
+ * Semantics:
+ * - setVisible(false) = hide (keep instance/resources)
+ * - destroy(id) = explicit teardown
+ * - ORBIT.widgets omitting an already-mounted id does NOT destroy it
  */
+
 
 
 
@@ -568,11 +808,31 @@ var maybeShowLauncherHint = __dep2.maybeShowLauncherHint;
 let mountedConfig = null;
 /** @type {boolean} */
 let mounted = false;
+/** @type {boolean} */
+let launcherBound = false;
 
-/** @type {Map<string, { start: Function, getRoot: Function }>} */
+/**
+ * Legacy + v0.3 host adapter
+ * @typedef {Object} HostAdapter
+ * @property {() => void} start
+ * @property {() => HTMLElement | null} getRoot
+ * @property {() => void} [destroy]
+ * @property {() => HTMLElement[]} [getVisibilityTargets]
+ * @property {(visible: boolean) => void} [setVisible]
+ */
+
+/** @type {Map<string, HostAdapter>} */
 const hostAdapters = new Map();
 
-/** @type {Map<string, { id: string, visible: boolean, started: boolean }>} */
+/**
+ * @typedef {Object} InstanceRecord
+ * @property {string} id
+ * @property {boolean} visible
+ * @property {boolean} started
+ * @property {boolean} destroyed
+ */
+
+/** @type {Map<string, InstanceRecord>} */
 const instances = new Map();
 
 /** @type {Map<string, Set<Function>>} */
@@ -580,15 +840,20 @@ const listeners = new Map();
 
 /** @type {ReturnType<typeof createLauncher> | null} */
 let launcher = null;
+/** @type {ReturnType<typeof createLauncherFallback> | null} */
+let fallback = null;
 
 const api = {
-  version: "0.2.0-c",
+  version: "0.3.0-phase5",
   mount: mount,
+  register: register,
   list: list,
+  get: get,
   listRegistered: listRegistered,
   listHosts: listHosts,
   registerHost: registerHost,
   setVisible: setVisible,
+  destroy: destroy,
   toggleLauncher: toggleLauncher,
   openLauncher: openLauncher,
   closeLauncher: closeLauncher,
@@ -629,6 +894,13 @@ function getLauncherKey() {
   return (cfg && cfg.launcherKey) || "Alt+O";
 }
 
+function getLauncherFallbackMode() {
+  const cfg = mountedConfig || readPageConfig();
+  const m = cfg && cfg.launcherFallback;
+  if (m === "none" || m === "host-button" || m === "ghost") return m;
+  return "ghost";
+}
+
 function ensureLauncher() {
   if (!launcher) {
     launcher = createLauncher(api, getLauncherKey);
@@ -636,6 +908,24 @@ function ensureLauncher() {
   return launcher;
 }
 
+function ensureFallback() {
+  if (!fallback) {
+    fallback = createLauncherFallback(api, getLauncherFallbackMode);
+  }
+  return fallback;
+}
+
+function syncFallback() {
+  try {
+    ensureFallback().sync();
+  } catch (e) {}
+}
+
+/**
+ * Legacy adapter registration (v0.2 compatible).
+ * @param {string} id
+ * @param {HostAdapter} adapter
+ */
 function registerHost(id, adapter) {
   if (!id || !adapter || typeof adapter.start !== "function") {
     throw new Error("registerHost requires id and start()");
@@ -648,57 +938,104 @@ function registerHost(id, adapter) {
         : function () {
             return null;
           },
+    destroy: typeof adapter.destroy === "function" ? adapter.destroy : null,
+    getVisibilityTargets:
+      typeof adapter.getVisibilityTargets === "function"
+        ? adapter.getVisibilityTargets
+        : null,
+    setVisible:
+      typeof adapter.setVisible === "function" ? adapter.setVisible : null,
   });
+  return api;
+}
+
+/**
+ * Widget v1 definition register (alias of registry).
+ * @param {object} definition
+ */
+function register(definition) {
+  if (!definition || !definition.id) {
+    throw new Error("register requires definition.id");
+  }
+  registerWidget(definition.id, definition);
   return api;
 }
 
 function getOrCreateInstance(id) {
   let inst = instances.get(id);
   if (!inst) {
-    inst = { id: id, visible: false, started: false };
+    inst = { id: id, visible: false, started: false, destroyed: false };
     instances.set(id, inst);
   }
   return inst;
 }
 
+/**
+ * Apply hide/show to root + optional visibility targets from adapter.
+ * No per-widget id hardcoding in Runtime.
+ */
 function applyDomVisibility(id, visible) {
   const adapter = hostAdapters.get(id);
   if (!adapter) return false;
-  const root = adapter.getRoot();
-  if (!root) return false;
 
-  if (root.classList) {
-    root.classList.remove("orbit-hiding", "orbit-showing");
-    if (visible) root.classList.remove("orbit-hidden");
-    else root.classList.add("orbit-hidden");
+  if (typeof adapter.setVisible === "function") {
+    try {
+      adapter.setVisible(visible);
+      return true;
+    } catch (e) {
+      console.error("[Orbit] adapter.setVisible", id, e);
+    }
   }
 
-  if (visible) {
-    root.style.display = "";
-    root.style.visibility = "";
-    root.style.opacity = "";
-    root.removeAttribute("hidden");
-    root.setAttribute("aria-hidden", "false");
-  } else {
-    root.style.display = "none";
-    root.setAttribute("aria-hidden", "true");
-  }
-
-  if (id === "music" && typeof document !== "undefined") {
-    const sheet = document.getElementById("mp-dock-list");
-    if (sheet && sheet.classList) {
-      if (visible) {
-        sheet.classList.remove("orbit-hidden");
-        sheet.style.display = "";
-      } else {
-        sheet.classList.add("orbit-hidden");
-        sheet.style.display = "none";
+  /** @type {HTMLElement[]} */
+  const targets = [];
+  const root = adapter.getRoot && adapter.getRoot();
+  if (root) targets.push(root);
+  if (typeof adapter.getVisibilityTargets === "function") {
+    try {
+      const extra = adapter.getVisibilityTargets() || [];
+      for (let i = 0; i < extra.length; i++) {
+        if (extra[i] && targets.indexOf(extra[i]) < 0) targets.push(extra[i]);
       }
+    } catch (e) {}
+  }
+  if (!targets.length) return false;
+
+  for (let i = 0; i < targets.length; i++) {
+    const el = targets[i];
+    if (!el) continue;
+    if (visible) {
+      if (el._orbitHideTimer) {
+        clearTimeout(el._orbitHideTimer);
+        el._orbitHideTimer = null;
+      }
+      if (el.classList) {
+        el.classList.remove("orbit-hidden", "orbit-hidden-final", "orbit-hiding");
+      }
+      el.style.display = "";
+      el.style.visibility = "";
+      el.style.opacity = "";
+      el.removeAttribute("hidden");
+      el.setAttribute("aria-hidden", "false");
+      // force reflow then allow transition from hidden state if needed
+      void el.offsetWidth;
+    } else {
+      el.setAttribute("aria-hidden", "true");
+      if (el.classList) {
+        el.classList.remove("orbit-hidden-final");
+        el.classList.add("orbit-hidden");
+      }
+      if (el._orbitHideTimer) clearTimeout(el._orbitHideTimer);
+      el._orbitHideTimer = setTimeout(function () {
+        el._orbitHideTimer = null;
+        if (el.classList && el.classList.contains("orbit-hidden")) {
+          el.classList.add("orbit-hidden-final");
+        }
+      }, 240);
     }
   }
   return true;
 }
-
 
 function ensureStarted(id) {
   const adapter = hostAdapters.get(id);
@@ -707,6 +1044,10 @@ function ensureStarted(id) {
     return false;
   }
   const inst = getOrCreateInstance(id);
+  if (inst.destroyed) {
+    inst.destroyed = false;
+    inst.started = false;
+  }
   if (!inst.started) {
     adapter.start();
     inst.started = true;
@@ -742,7 +1083,60 @@ function setVisible(id, visible) {
   if (launcher && launcher.isOpen()) {
     launcher.renderList();
   }
+  syncFallback();
   return api;
+}
+
+/**
+ * Explicit destroy. Not implied by omitting id from widgets config.
+ * @param {string} id
+ * @param {{ forget?: boolean }} [options]
+ */
+function destroy(id, options) {
+  if (!id) return api;
+  const adapter = hostAdapters.get(id);
+  const inst = instances.get(id);
+
+  if (adapter && typeof adapter.destroy === "function") {
+    try {
+      adapter.destroy();
+    } catch (e) {
+      emit("widgetError", { id: id, phase: "destroy", error: e });
+      console.error("[Orbit] destroy failed", id, e);
+    }
+  } else if (adapter && adapter.getRoot) {
+    const root = adapter.getRoot();
+    if (root && root.parentNode) {
+      try {
+        root.parentNode.removeChild(root);
+      } catch (e) {}
+    }
+  }
+
+  if (inst) {
+    inst.started = false;
+    inst.visible = false;
+    inst.destroyed = true;
+  }
+
+  emit("destroy", { id: id, options: options || {} });
+  if (launcher && launcher.isOpen()) {
+    launcher.renderList();
+  }
+  syncFallback();
+  return api;
+}
+
+function get(id) {
+  if (!id) return null;
+  const inst = instances.get(id);
+  if (!inst) return null;
+  return {
+    id: inst.id,
+    visible: !!inst.visible,
+    started: !!inst.started,
+    destroyed: !!inst.destroyed,
+  };
 }
 
 function defaultWidgets() {
@@ -753,6 +1147,10 @@ function defaultWidgets() {
   return ids;
 }
 
+/**
+ * Idempotent mount. widgets[] only updates listed ids — never destroys omitted ones.
+ * @param {object} [config]
+ */
 function mount(config) {
   const page = readPageConfig();
   const cfg = Object.assign({}, page, config || {});
@@ -761,7 +1159,11 @@ function mount(config) {
     mountedConfig = cfg;
     mounted = true;
   } else if (config) {
+    // Merge config object but do not interpret missing widgets as teardown
     mountedConfig = Object.assign({}, mountedConfig, config);
+    if (config.widgets) {
+      mountedConfig.widgets = config.widgets;
+    }
   }
 
   const widgets =
@@ -778,11 +1180,13 @@ function mount(config) {
     setVisible(w.id, vis);
   });
 
-  ensureLauncher().bind();
+  if (!launcherBound) {
+    ensureLauncher().bind();
+    launcherBound = true;
+  }
 
-  // Phase C: one-time hotkey tip when ≥2 hosts
   try {
-    var hintEnabled = mountedConfig.launcherHint !== false;
+    var hintEnabled = !mountedConfig || mountedConfig.launcherHint !== false;
     maybeShowLauncherHint({
       enabled: hintEnabled,
       getLauncherKey: getLauncherKey,
@@ -792,6 +1196,7 @@ function mount(config) {
     });
   } catch (e) {}
 
+  syncFallback();
   emit("mount", { config: mountedConfig });
   return api;
 }
@@ -799,6 +1204,7 @@ function mount(config) {
 function list() {
   const out = [];
   instances.forEach(function (inst) {
+    if (inst.destroyed && !inst.started) return;
     out.push({ id: inst.id, visible: !!inst.visible });
   });
   return out;
@@ -812,21 +1218,24 @@ function listHosts() {
   return Array.from(hostAdapters.keys());
 }
 
-function toggleLauncher() {
+function toggleLauncher(trigger) {
   const L = ensureLauncher();
-  const open = L.toggle();
+  const open = L.toggle(trigger);
+  emit("launcherOpen", { open: open });
   emit("launcherToggle", { open: open });
   return api;
 }
 
-function openLauncher() {
-  ensureLauncher().setOpen(true);
+function openLauncher(trigger) {
+  ensureLauncher().setOpen(true, trigger);
+  emit("launcherOpen", { open: true });
   emit("launcherToggle", { open: true });
   return api;
 }
 
 function closeLauncher() {
   ensureLauncher().setOpen(false);
+  emit("launcherClose", { open: false });
   emit("launcherToggle", { open: false });
   return api;
 }
@@ -853,9 +1262,12 @@ api.registry = {
 __mod.Orbit = Orbit;
 __mod.mount = mount;
 __mod.list = list;
+__mod.get = get;
 __mod.setVisible = setVisible;
+__mod.destroy = destroy;
 __mod.toggleLauncher = toggleLauncher;
 __mod.registerHost = registerHost;
+__mod.register = register;
 __mod.on = on;
 __mod.off = off;
 __mod.registerWidget = registerWidget;
@@ -868,9 +1280,12 @@ __mod.default = Orbit;
 if (typeof Orbit !== 'undefined') __mod.Orbit = Orbit;
 if (typeof mount !== 'undefined') __mod.mount = mount;
 if (typeof list !== 'undefined') __mod.list = list;
+if (typeof get !== 'undefined') __mod.get = get;
 if (typeof setVisible !== 'undefined') __mod.setVisible = setVisible;
+if (typeof destroy !== 'undefined') __mod.destroy = destroy;
 if (typeof toggleLauncher !== 'undefined') __mod.toggleLauncher = toggleLauncher;
 if (typeof registerHost !== 'undefined') __mod.registerHost = registerHost;
+if (typeof register !== 'undefined') __mod.register = register;
 if (typeof on !== 'undefined') __mod.on = on;
 if (typeof off !== 'undefined') __mod.off = off;
 if (typeof registerWidget !== 'undefined') __mod.registerWidget = registerWidget;
@@ -2047,6 +2462,82 @@ if (typeof createAudioEngine !== 'undefined') __mod.createAudioEngine = createAu
 
 };
 
+/* ---- src/core/LifecycleScope.js ---- */
+__modules["src/core/LifecycleScope.js"] = function (__mod, __require) {
+/**
+ * Orbit v0.3 — LifecycleScope
+ *
+ * Per-instance cleanup bag. Register external side effects with add(fn);
+ * dispose() runs them in reverse order, idempotently.
+ * One failing cleanup must not block the rest.
+ */
+
+/**
+ * @returns {{
+ *   add: (fn: () => void | Promise<void>) => () => void,
+ *   dispose: (emitError?: (err: unknown) => void) => Promise<void>,
+ *   disposed: boolean
+ * }}
+ */
+function createLifecycleScope() {
+  let disposed = false;
+  /** @type {Set<() => void | Promise<void>>} */
+  const cleanups = new Set();
+
+  /**
+   * @param {() => void | Promise<void>} fn
+   * @returns {() => void} unregister (no-op if already disposed)
+   */
+  function add(fn) {
+    if (typeof fn !== "function") {
+      throw new Error("LifecycleScope.add requires a function");
+    }
+    if (disposed) {
+      Promise.resolve()
+        .then(fn)
+        .catch(function () {});
+      return function () {};
+    }
+    cleanups.add(fn);
+    return function remove() {
+      cleanups.delete(fn);
+    };
+  }
+
+  /**
+   * @param {(err: unknown) => void} [emitError]
+   */
+  async function dispose(emitError) {
+    if (disposed) return;
+    disposed = true;
+    const list = Array.from(cleanups).reverse();
+    cleanups.clear();
+    for (let i = 0; i < list.length; i++) {
+      try {
+        await list[i]();
+      } catch (error) {
+        if (typeof emitError === "function") {
+          try {
+            emitError(error);
+          } catch (_) {}
+        }
+      }
+    }
+  }
+
+  return {
+    add: add,
+    dispose: dispose,
+    get disposed() {
+      return disposed;
+    },
+  };
+}
+
+if (typeof createLifecycleScope !== 'undefined') __mod.createLifecycleScope = createLifecycleScope;
+
+};
+
 /* ---- src/host/music-player-host.js ---- */
 __modules["src/host/music-player-host.js"] = function (__mod, __require) {
 var __dep0 = __require("src/interaction/Gesture.js");
@@ -2061,9 +2552,12 @@ var __dep4 = __require("src/interaction/Layout.js");
 var createLayout = __dep4.createLayout;
 var __dep5 = __require("src/media/AudioEngine.js");
 var createAudioEngine = __dep5.createAudioEngine;
+var __dep6 = __require("src/core/LifecycleScope.js");
+var createLifecycleScope = __dep6.createLifecycleScope;
 /**
  * FWF Music Player Host（模块源码，请用 npm run build 打包后再给 Hexo 使用）
  */
+
 
 
 
@@ -2589,8 +3083,10 @@ const CONFIG = {
       panel.className = "mp-dock-list";
       panel.id = "mp-dock-list";
       panel.setAttribute("aria-hidden", "true");
+      panel.setAttribute("data-orbit-portal", "music-dock-list");
       panel.innerHTML = this.DOCK_LIST_HTML;
       mount.appendChild(panel);
+      if (typeof claimOwnedPortal === "function") claimOwnedPortal(panel);
       return panel;
     },
 
@@ -2816,18 +3312,7 @@ const CONFIG = {
 
 
 
-  /** 是否贴在左右吸附区（不依赖 is-docked class，避免竞态） */
-  function isNearDockEdge() {
-    if (!root) return null;
-    const { leftBase, w, leftX, rightX, vw } = getSnapTargets();
-    const { enter } = getSnapDistances();
-    const absLeft = leftBase + posX;
-    const absRight = absLeft + w;
-    const th = enter + 20;
-    if (absLeft < th || Math.abs(posX - leftX) < 10) return "left";
-    if (absRight > vw - th || Math.abs(posX - rightX) < 10) return "right";
-    return null;
-  }
+  // isNearDockEdge: use Snap module version above
 
   /** 理想贴边坐标（永远用 leftX/rightX，不用可能已被污染的 pos） */
   function idealDockPos(side) {
@@ -3229,6 +3714,8 @@ const CONFIG = {
     var g = ensureGesture();
     var d = ensureDrag();
     var pid = g.getActivePointer();
+    if (moveRaf) { cancelAnimationFrame(moveRaf); moveRaf = 0; }
+    pendingMove = null;
     document.removeEventListener("pointermove", onDocPointerMove);
     document.removeEventListener("pointerup", onDocPointerUp);
     document.removeEventListener("pointercancel", onDocPointerUp);
@@ -3288,7 +3775,22 @@ const CONFIG = {
     document.addEventListener("pointercancel", onDocPointerUp, { passive: false });
   }
 
+  var moveRaf = 0;
+  var pendingMove = null;
+  function flushPointerMove() {
+    moveRaf = 0;
+    var e = pendingMove;
+    pendingMove = null;
+    if (!e) return;
+    onDocPointerMoveNow(e);
+  }
   function onDocPointerMove(e) {
+    pendingMove = e;
+    if (!moveRaf) {
+      moveRaf = requestAnimationFrame(flushPointerMove);
+    }
+  }
+  function onDocPointerMoveNow(e) {
     var g = ensureGesture();
     var d = ensureDrag();
     if (e.pointerType === "mouse" && e.buttons === 0) {
@@ -3395,7 +3897,7 @@ const CONFIG = {
     if (r.progress) {
       r.progress.addEventListener("click", (e) => {
         e.stopPropagation();
-        seek((e.clientX - r.progress.getBoundingClientRect().left) / r.progress.getBoundingClientRect().width);
+        var pr = r.progress.getBoundingClientRect(); seek((e.clientX - pr.left) / (pr.width || 1));
       });
     }
 
@@ -3436,6 +3938,20 @@ const CONFIG = {
   }
 
   let initialized = false, eventsBound = false;
+  let lifecycle = null;
+  let bodyObserver = null;
+  let ownedPortals = [];
+  let onPjaxComplete = null;
+  function claimOwnedPortal(el) {
+    if (el && ownedPortals.indexOf(el) < 0) ownedPortals.push(el);
+  }
+  function releaseOwnedPortals() {
+    for (var i = 0; i < ownedPortals.length; i++) {
+      var el = ownedPortals[i];
+      try { if (el && el.parentNode) el.parentNode.removeChild(el); } catch (err) {}
+    }
+    ownedPortals = [];
+  }
 
   /** @type {ReturnType<typeof Template.bindRefs> | null} */
   let refs = null;
@@ -3470,6 +3986,9 @@ const CONFIG = {
 
   async function init() {
     if (!document.body) return setTimeout(init, 50);
+    if (!lifecycle || lifecycle.disposed) {
+      lifecycle = createLifecycleScope();
+    }
     isMobile = window.innerWidth <= 600;
     loadPersisted();
     // Phase 2: mount shell via Template
@@ -3505,27 +4024,107 @@ const CONFIG = {
       if (listInner) listInner.innerHTML = '<div class="mp-empty">歌单加载失败</div>';
     }
 
-    new MutationObserver(() => {
+    if (bodyObserver) {
+      try { bodyObserver.disconnect(); } catch (e) {}
+      bodyObserver = null;
+    }
+    bodyObserver = new MutationObserver(() => {
+      if (lifecycle && lifecycle.disposed) return;
       const existing = document.getElementById("music-player");
-      if (!existing || !document.body.contains(existing)) { if (root) { document.body.appendChild(root); ensureVisibleOnScreen(); } else init(); }
-    }).observe(document.body, { childList: true });
+      if (!existing || !document.body.contains(existing)) {
+        if (root) { document.body.appendChild(root); ensureVisibleOnScreen(); }
+        else init();
+      }
+    });
+    bodyObserver.observe(document.body, { childList: true });
   }
 
   function boot() {
-    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
-    document.addEventListener("pjax:complete", () => { setTimeout(() => { if (!document.getElementById("music-player")) { initialized = false; eventsBound = false; init(); } else ensureVisibleOnScreen(); }, 30); });
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init, { once: true });
+    else init();
+    if (!onPjaxComplete) {
+      onPjaxComplete = function () {
+        setTimeout(function () {
+          if (!document.getElementById("music-player")) {
+            initialized = false;
+            eventsBound = false;
+            init();
+          } else ensureVisibleOnScreen();
+        }, 30);
+      };
+      document.addEventListener("pjax:complete", onPjaxComplete);
+    }
+  }
+
+  /**
+   * Phase 3 — destroy (idempotent). Cleans audio, observer, owned portals, root.
+   * Does not remove foreign #mp-dock-list nodes we did not create.
+   */
+  function destroyMusicPlayer() {
+    try {
+      if (musicEngine && typeof musicEngine.destroy === "function") musicEngine.destroy();
+    } catch (e) {}
+    musicEngine = null;
+    audio = null;
+
+    if (bodyObserver) {
+      try { bodyObserver.disconnect(); } catch (e) {}
+      bodyObserver = null;
+    }
+
+    if (onPjaxComplete) {
+      try { document.removeEventListener("pjax:complete", onPjaxComplete); } catch (e) {}
+      onPjaxComplete = null;
+    }
+
+    releaseOwnedPortals();
+
+    if (root && root.parentNode) {
+      try { root.parentNode.removeChild(root); } catch (e) {}
+    }
+    var stray = document.getElementById("music-player");
+    if (stray && stray.parentNode) {
+      try { stray.parentNode.removeChild(stray); } catch (e) {}
+    }
+
+    if (lifecycle && !lifecycle.disposed) {
+      try { lifecycle.dispose(); } catch (e) {}
+    }
+    lifecycle = null;
+
+    root = null;
+    coverEl = null;
+    refs = null;
+    initialized = false;
+    eventsBound = false;
+    isOpen = false;
+    isListOpen = false;
+    isDockListOpen = false;
+    playlist = [];
   }
 
 /** 启动播放器（打包后会自动调用） */
 function startMusicPlayer() {
   boot();
+  if (typeof window !== "undefined") {
+    window.__FWF_MUSIC_API__ = {
+      start: startMusicPlayer,
+      destroy: destroyMusicPlayer,
+    };
+  }
+}
+function destroyMusicPlayerExport() {
+  destroyMusicPlayer();
 }
 __mod.boot = boot;
 __mod.init = init;
+__mod.destroyMusicPlayer = destroyMusicPlayer;
 
 if (typeof startMusicPlayer !== 'undefined') __mod.startMusicPlayer = startMusicPlayer;
+if (typeof destroyMusicPlayerExport !== 'undefined') __mod.destroyMusicPlayerExport = destroyMusicPlayerExport;
 if (typeof boot !== 'undefined') __mod.boot = boot;
 if (typeof init !== 'undefined') __mod.init = init;
+if (typeof destroyMusicPlayer !== 'undefined') __mod.destroyMusicPlayer = destroyMusicPlayer;
 
 };
 
@@ -3634,10 +4233,13 @@ var resolveExpandDirection = __dep3.resolveExpandDirection;
 var expandDownTranslateY = __dep3.expandDownTranslateY;
 var __dep4 = __require("src/widgets/clock/ClockWidget.js");
 var mount = __dep4.mount;
+var __dep5 = __require("src/core/LifecycleScope.js");
+var createLifecycleScope = __dep5.createLifecycleScope;
 /**
  * FWF Clock Host — minimal floating shell + Clock widget
  * Reuses Gesture / Drag / Snap (same interaction language as Music).
  */
+
 
 
 
@@ -3682,6 +4284,8 @@ let drag = null;
 let snap = null;
 let clockApi = null;
 let eventsBound = false;
+let lifecycle = null;
+let booted = false;
 
 function clamp(v, min, max) {
   return Math.min(max, Math.max(min, v));
@@ -3987,6 +4591,11 @@ function endDragSession(commitSnap) {
   const g = ensureGesture();
   const d = ensureDrag();
   const pid = g.getActivePointer();
+  if (moveRaf) {
+    cancelAnimationFrame(moveRaf);
+    moveRaf = 0;
+  }
+  pendingMove = null;
   document.removeEventListener("pointermove", onMove);
   document.removeEventListener("pointerup", onUp);
   document.removeEventListener("pointercancel", onUp);
@@ -4030,7 +4639,20 @@ function onDown(e) {
   document.addEventListener("pointercancel", onUp, { passive: false });
 }
 
+let moveRaf = 0;
+let pendingMove = null;
+function flushMove() {
+  moveRaf = 0;
+  const e = pendingMove;
+  pendingMove = null;
+  if (!e) return;
+  onMoveNow(e);
+}
 function onMove(e) {
+  pendingMove = e;
+  if (!moveRaf) moveRaf = requestAnimationFrame(flushMove);
+}
+function onMoveNow(e) {
   const g = ensureGesture();
   const d = ensureDrag();
   if (e.pointerType === "mouse" && e.buttons === 0) {
@@ -4092,25 +4714,109 @@ function onMouseLeave(e) {
   setOpen(false);
 }
 
+function onRootClick(e) {
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+function onResize() {
+  isMobile = window.innerWidth <= 600;
+  const pair = clampPosition(posX, posY);
+  posX = pair[0];
+  posY = pair[1];
+  applyTransform();
+  if (isOpen) updateExpandDirection(true);
+}
+
 function bindEvents() {
   if (!root || eventsBound) return;
   eventsBound = true;
   root.addEventListener("pointerdown", onDown);
-  root.addEventListener("click", function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-  });
+  root.addEventListener("click", onRootClick);
   root.addEventListener("mouseenter", onMouseEnter);
   root.addEventListener("mouseleave", onMouseLeave);
   document.addEventListener("pointerdown", onDocPointerDown, true);
-  window.addEventListener("resize", function () {
-    isMobile = window.innerWidth <= 600;
-    const pair = clampPosition(posX, posY);
-    posX = pair[0];
-    posY = pair[1];
-    applyTransform();
-    if (isOpen) updateExpandDirection(true);
-  });
+  window.addEventListener("resize", onResize);
+
+  if (lifecycle) {
+    lifecycle.add(function () {
+      if (!root) return;
+      root.removeEventListener("pointerdown", onDown);
+      root.removeEventListener("click", onRootClick);
+      root.removeEventListener("mouseenter", onMouseEnter);
+      root.removeEventListener("mouseleave", onMouseLeave);
+      document.removeEventListener("pointerdown", onDocPointerDown, true);
+      window.removeEventListener("resize", onResize);
+      eventsBound = false;
+    });
+  }
+}
+
+function resetHostState() {
+  root = null;
+  faceEl = null;
+  panelEl = null;
+  dateEl = null;
+  fullTimeEl = null;
+  clockApi = null;
+  gesture = null;
+  drag = null;
+  snap = null;
+  eventsBound = false;
+  dragging = false;
+  wasDragging = false;
+  isOpen = false;
+  lastDockSide = null;
+  expandLeft = false;
+  expandDown = false;
+  booted = false;
+}
+
+/**
+ * WidgetInstance-style destroy (Phase 2). Idempotent.
+ */
+function destroyClockWidget() {
+  if (lifecycle && !lifecycle.disposed) {
+    // dispose is async but cleanups are sync — fire and clear
+    lifecycle.dispose();
+  }
+  lifecycle = null;
+
+  if (clockApi && typeof clockApi.destroy === "function") {
+    try {
+      clockApi.destroy();
+    } catch (e) {}
+  }
+  clockApi = null;
+
+  if (eventsBound && root) {
+    try {
+      root.removeEventListener("pointerdown", onDown);
+      root.removeEventListener("click", onRootClick);
+      root.removeEventListener("mouseenter", onMouseEnter);
+      root.removeEventListener("mouseleave", onMouseLeave);
+    } catch (e) {}
+    try {
+      document.removeEventListener("pointerdown", onDocPointerDown, true);
+      window.removeEventListener("resize", onResize);
+    } catch (e) {}
+    eventsBound = false;
+  }
+
+  if (root && root.parentNode) {
+    try {
+      root.parentNode.removeChild(root);
+    } catch (e) {}
+  }
+  // remove stray by id
+  const stray = typeof document !== "undefined" && document.getElementById("fwf-clock");
+  if (stray && stray.parentNode) {
+    try {
+      stray.parentNode.removeChild(stray);
+    } catch (e) {}
+  }
+
+  resetHostState();
 }
 
 function init() {
@@ -4118,6 +4824,16 @@ function init() {
     setTimeout(init, 50);
     return;
   }
+  // Idempotent: already mounted
+  if (root && document.body.contains(root) && clockApi) {
+    return;
+  }
+  // After destroy, allow full remount
+  if (root && !document.body.contains(root)) {
+    resetHostState();
+  }
+
+  lifecycle = createLifecycleScope();
   isMobile = window.innerWidth <= 600;
   loadPos();
   root = createDOM();
@@ -4128,7 +4844,6 @@ function init() {
   applyTransform();
   bindEvents();
 
-  // mount Clock widget content (must use name `mount` — bundler strips import aliases)
   clockApi = mount({
     root: root,
     refs: {
@@ -4139,24 +4854,71 @@ function init() {
     },
     options: { intervalMs: 1000, showSeconds: false },
   });
+
+  lifecycle.add(function () {
+    if (clockApi && typeof clockApi.destroy === "function") {
+      clockApi.destroy();
+    }
+    clockApi = null;
+  });
+
+  lifecycle.add(function () {
+    if (root && root.parentNode) {
+      root.parentNode.removeChild(root);
+    }
+    const stray = document.getElementById("fwf-clock");
+    if (stray && stray.parentNode) stray.parentNode.removeChild(stray);
+  });
+
+  booted = true;
 }
 
 function boot() {
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
+    document.addEventListener("DOMContentLoaded", init, { once: true });
   } else {
     init();
   }
 }
 function startClockWidget() {
   boot();
+  if (typeof window !== "undefined") {
+    window.__FWF_CLOCK__ = {
+      start: startClockWidget,
+      destroy: destroyClockWidget,
+      getRoot: getClockRoot,
+      getInstance: getClockInstance,
+    };
+  }
+}
+
+/** @returns {HTMLElement | null} */
+function getClockRoot() {
+  return root;
+}
+
+/**
+ * WidgetInstance shape for Orbit / tests
+ * @returns {{ id: string, root: HTMLElement | null, destroy: Function }}
+ */
+function getClockInstance() {
+  return {
+    id: "clock",
+    root: root,
+    destroy: destroyClockWidget,
+  };
 }
 __mod.boot = boot;
 __mod.init = init;
+__mod.destroy = destroyClockWidget;
 
+if (typeof destroyClockWidget !== 'undefined') __mod.destroyClockWidget = destroyClockWidget;
 if (typeof startClockWidget !== 'undefined') __mod.startClockWidget = startClockWidget;
+if (typeof getClockRoot !== 'undefined') __mod.getClockRoot = getClockRoot;
+if (typeof getClockInstance !== 'undefined') __mod.getClockInstance = getClockInstance;
 if (typeof boot !== 'undefined') __mod.boot = boot;
 if (typeof init !== 'undefined') __mod.init = init;
+if (typeof destroy !== 'undefined') __mod.destroy = destroy;
 
 };
 
@@ -4166,14 +4928,14 @@ var __dep0 = __require("src/core/Orbit.js");
 var Orbit = __dep0.Orbit;
 var __dep1 = __require("src/host/music-player-host.js");
 var startMusicPlayer = __dep1.startMusicPlayer;
+var destroyMusicPlayer = __dep1.destroyMusicPlayer;
 var __dep2 = __require("src/host/clock-host.js");
 var startClockWidget = __dep2.startClockWidget;
+var destroyClockWidget = __dep2.destroyClockWidget;
+var getClockRoot = __dep2.getClockRoot;
 /**
- * Orbit Runtime entry — Phase A
- * Registers Music + Clock hosts, exposes window.Orbit, mounts from window.ORBIT.
- *
- * Single-widget pages should keep using entry-music / entry-clock.
- * Multi-widget / Demo should use this bundle only (avoid double-start).
+ * Orbit Runtime entry — Phase 4
+ * Registers Music + Clock with destroy + visibility targets (no Runtime id hardcode).
  */
 
 
@@ -4185,6 +4947,25 @@ Orbit.registerHost("music", {
   getRoot: function () {
     return document.getElementById("music-player");
   },
+  destroy: function () {
+    destroyMusicPlayer();
+  },
+  getVisibilityTargets: function () {
+    const nodes = [];
+    const root = document.getElementById("music-player");
+    if (root) nodes.push(root);
+    // Only portals marked as ours (Phase 3 ownership); fallback id for single-instance pages
+    const marked = document.querySelectorAll(
+      '[data-orbit-portal="music-dock-list"]'
+    );
+    if (marked && marked.length) {
+      for (let i = 0; i < marked.length; i++) nodes.push(marked[i]);
+    } else {
+      const sheet = document.getElementById("mp-dock-list");
+      if (sheet) nodes.push(sheet);
+    }
+    return nodes;
+  },
 });
 
 Orbit.registerHost("clock", {
@@ -4192,7 +4973,10 @@ Orbit.registerHost("clock", {
     startClockWidget();
   },
   getRoot: function () {
-    return document.getElementById("fwf-clock");
+    return getClockRoot() || document.getElementById("fwf-clock");
+  },
+  destroy: function () {
+    destroyClockWidget();
   },
 });
 

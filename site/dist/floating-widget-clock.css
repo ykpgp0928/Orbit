@@ -102,3 +102,21 @@
     --fwc-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
   }
 }
+
+
+/* Orbit visibility animation */
+.fwf-clock {
+  transition:
+    opacity 0.22s ease,
+    transform 0.22s ease,
+    visibility 0.22s ease;
+}
+.fwf-clock.orbit-hidden {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  transform: scale(0.92) !important;
+}
+.fwf-clock.orbit-hidden-final {
+  display: none !important;
+}

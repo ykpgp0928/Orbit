@@ -10,6 +10,7 @@ import {
   expandDownTranslateY,
 } from "../interaction/ExpandPolicy.js";
 import { mount } from "../widgets/clock/ClockWidget.js";
+import { createLifecycleScope } from "../core/LifecycleScope.js";
 
 const CONFIG = {
   storageKey: "fwf-clock-pos-v1",
@@ -50,6 +51,8 @@ let drag = null;
 let snap = null;
 let clockApi = null;
 let eventsBound = false;
+let lifecycle = null;
+let booted = false;
 
 function clamp(v, min, max) {
   return Math.min(max, Math.max(min, v));
@@ -355,6 +358,11 @@ function endDragSession(commitSnap) {
   const g = ensureGesture();
   const d = ensureDrag();
   const pid = g.getActivePointer();
+  if (moveRaf) {
+    cancelAnimationFrame(moveRaf);
+    moveRaf = 0;
+  }
+  pendingMove = null;
   document.removeEventListener("pointermove", onMove);
   document.removeEventListener("pointerup", onUp);
   document.removeEventListener("pointercancel", onUp);
@@ -398,7 +406,20 @@ function onDown(e) {
   document.addEventListener("pointercancel", onUp, { passive: false });
 }
 
+let moveRaf = 0;
+let pendingMove = null;
+function flushMove() {
+  moveRaf = 0;
+  const e = pendingMove;
+  pendingMove = null;
+  if (!e) return;
+  onMoveNow(e);
+}
 function onMove(e) {
+  pendingMove = e;
+  if (!moveRaf) moveRaf = requestAnimationFrame(flushMove);
+}
+function onMoveNow(e) {
   const g = ensureGesture();
   const d = ensureDrag();
   if (e.pointerType === "mouse" && e.buttons === 0) {
@@ -460,25 +481,109 @@ function onMouseLeave(e) {
   setOpen(false);
 }
 
+function onRootClick(e) {
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+function onResize() {
+  isMobile = window.innerWidth <= 600;
+  const pair = clampPosition(posX, posY);
+  posX = pair[0];
+  posY = pair[1];
+  applyTransform();
+  if (isOpen) updateExpandDirection(true);
+}
+
 function bindEvents() {
   if (!root || eventsBound) return;
   eventsBound = true;
   root.addEventListener("pointerdown", onDown);
-  root.addEventListener("click", function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-  });
+  root.addEventListener("click", onRootClick);
   root.addEventListener("mouseenter", onMouseEnter);
   root.addEventListener("mouseleave", onMouseLeave);
   document.addEventListener("pointerdown", onDocPointerDown, true);
-  window.addEventListener("resize", function () {
-    isMobile = window.innerWidth <= 600;
-    const pair = clampPosition(posX, posY);
-    posX = pair[0];
-    posY = pair[1];
-    applyTransform();
-    if (isOpen) updateExpandDirection(true);
-  });
+  window.addEventListener("resize", onResize);
+
+  if (lifecycle) {
+    lifecycle.add(function () {
+      if (!root) return;
+      root.removeEventListener("pointerdown", onDown);
+      root.removeEventListener("click", onRootClick);
+      root.removeEventListener("mouseenter", onMouseEnter);
+      root.removeEventListener("mouseleave", onMouseLeave);
+      document.removeEventListener("pointerdown", onDocPointerDown, true);
+      window.removeEventListener("resize", onResize);
+      eventsBound = false;
+    });
+  }
+}
+
+function resetHostState() {
+  root = null;
+  faceEl = null;
+  panelEl = null;
+  dateEl = null;
+  fullTimeEl = null;
+  clockApi = null;
+  gesture = null;
+  drag = null;
+  snap = null;
+  eventsBound = false;
+  dragging = false;
+  wasDragging = false;
+  isOpen = false;
+  lastDockSide = null;
+  expandLeft = false;
+  expandDown = false;
+  booted = false;
+}
+
+/**
+ * WidgetInstance-style destroy (Phase 2). Idempotent.
+ */
+export function destroyClockWidget() {
+  if (lifecycle && !lifecycle.disposed) {
+    // dispose is async but cleanups are sync — fire and clear
+    lifecycle.dispose();
+  }
+  lifecycle = null;
+
+  if (clockApi && typeof clockApi.destroy === "function") {
+    try {
+      clockApi.destroy();
+    } catch (e) {}
+  }
+  clockApi = null;
+
+  if (eventsBound && root) {
+    try {
+      root.removeEventListener("pointerdown", onDown);
+      root.removeEventListener("click", onRootClick);
+      root.removeEventListener("mouseenter", onMouseEnter);
+      root.removeEventListener("mouseleave", onMouseLeave);
+    } catch (e) {}
+    try {
+      document.removeEventListener("pointerdown", onDocPointerDown, true);
+      window.removeEventListener("resize", onResize);
+    } catch (e) {}
+    eventsBound = false;
+  }
+
+  if (root && root.parentNode) {
+    try {
+      root.parentNode.removeChild(root);
+    } catch (e) {}
+  }
+  // remove stray by id
+  const stray = typeof document !== "undefined" && document.getElementById("fwf-clock");
+  if (stray && stray.parentNode) {
+    try {
+      stray.parentNode.removeChild(stray);
+    } catch (e) {}
+  }
+
+  resetHostState();
 }
 
 function init() {
@@ -486,6 +591,16 @@ function init() {
     setTimeout(init, 50);
     return;
   }
+  // Idempotent: already mounted
+  if (root && document.body.contains(root) && clockApi) {
+    return;
+  }
+  // After destroy, allow full remount
+  if (root && !document.body.contains(root)) {
+    resetHostState();
+  }
+
+  lifecycle = createLifecycleScope();
   isMobile = window.innerWidth <= 600;
   loadPos();
   root = createDOM();
@@ -496,7 +611,6 @@ function init() {
   applyTransform();
   bindEvents();
 
-  // mount Clock widget content (must use name `mount` — bundler strips import aliases)
   clockApi = mount({
     root: root,
     refs: {
@@ -507,11 +621,28 @@ function init() {
     },
     options: { intervalMs: 1000, showSeconds: false },
   });
+
+  lifecycle.add(function () {
+    if (clockApi && typeof clockApi.destroy === "function") {
+      clockApi.destroy();
+    }
+    clockApi = null;
+  });
+
+  lifecycle.add(function () {
+    if (root && root.parentNode) {
+      root.parentNode.removeChild(root);
+    }
+    const stray = document.getElementById("fwf-clock");
+    if (stray && stray.parentNode) stray.parentNode.removeChild(stray);
+  });
+
+  booted = true;
 }
 
 function boot() {
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
+    document.addEventListener("DOMContentLoaded", init, { once: true });
   } else {
     init();
   }
@@ -519,6 +650,31 @@ function boot() {
 
 export function startClockWidget() {
   boot();
+  if (typeof window !== "undefined") {
+    window.__FWF_CLOCK__ = {
+      start: startClockWidget,
+      destroy: destroyClockWidget,
+      getRoot: getClockRoot,
+      getInstance: getClockInstance,
+    };
+  }
 }
 
-export { boot, init };
+/** @returns {HTMLElement | null} */
+export function getClockRoot() {
+  return root;
+}
+
+/**
+ * WidgetInstance shape for Orbit / tests
+ * @returns {{ id: string, root: HTMLElement | null, destroy: Function }}
+ */
+export function getClockInstance() {
+  return {
+    id: "clock",
+    root: root,
+    destroy: destroyClockWidget,
+  };
+}
+
+export { boot, init, destroyClockWidget as destroy };

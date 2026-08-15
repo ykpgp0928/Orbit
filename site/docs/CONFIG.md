@@ -77,6 +77,7 @@ v0.1 无全局配置对象。行为写死在 Host：
 | `launcherKey` | `Alt+O` | 桌面打开管理面板 |
 | `launcherHint` | `true` | 首次 ≥2 组件时右下角提示 |
 | `widgets` | 全部已注册宿主 | `visible: false` 则先不显示 |
+| `launcherFallback` | `ghost` | `ghost`：粗指针且全部隐藏时显示恢复按钮；`host-button` / `none` |
 
 手机：**长按**球打开同一面板（与桌面快捷键等价入口）。
 
