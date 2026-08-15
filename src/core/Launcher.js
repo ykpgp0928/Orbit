@@ -33,8 +33,7 @@ function ensureStyles() {
   opacity:0 !important;
   visibility:hidden !important;
   pointer-events:none !important;
-  transform:scale(0.92);
-  transition:opacity .22s ease, transform .22s ease, visibility .22s ease !important;
+  transition:opacity .22s ease, visibility .22s ease !important;
 }
 .orbit-hidden-final{
   display:none !important;

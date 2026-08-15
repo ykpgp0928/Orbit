@@ -28,7 +28,6 @@
     margin 0.28s cubic-bezier(0.22, 1, 0.36, 1),
     box-shadow 0.2s ease,
     opacity 0.22s ease,
-    transform 0.22s ease,
     visibility 0.22s ease;
   overflow: hidden;
   display: flex;
@@ -110,7 +109,7 @@
   opacity: 0 !important;
   visibility: hidden !important;
   pointer-events: none !important;
-  transform: scale(0.92) !important;
+  /* no transform — preserves translate(posX,posY) in place */
 }
 .fwf-clock.orbit-hidden-final {
   display: none !important;
