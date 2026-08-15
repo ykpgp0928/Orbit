@@ -2,12 +2,14 @@
 
 **在任意网页上挂载可拖拽、可吸附的悬浮组件。**
 
+官网：[https://orbit.ykpgp0928.dpdns.org](https://orbit.ykpgp0928.dpdns.org)
+
 对外品牌：**Orbit**  
 技术说明：Floating Widget Runtime（原 FWF）  
-当前版本：**0.2.0-c**（多 Widget + Launcher）
+当前版本：**0.2.1**（多 Widget + Launcher）
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0--c-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.2.1-green.svg)](CHANGELOG.md)
 
 > English: Orbit is a tiny floating-widget runtime for static sites (Hexo, etc.). Shared drag / snap / expand; Music and Clock are the first widgets. Multi-widget pages use `dist/orbit.js` and a launcher panel.
 
@@ -104,12 +106,8 @@ npx --yes serve -p 3456 .
 ### 在线演示
 
 以下域名均可访问（内容相同：首页入口、总览、仅 Music、仅 Clock）：
-
-- [https://orbit.ykpgp0928.dpdns.org](https://orbit.ykpgp0928.dpdns.org)
 - [https://fwf.ykpgp0928.dpdns.org](https://fwf.ykpgp0928.dpdns.org)
 - [https://floating-widget-framework.ykpgp0928.dpdns.org](https://floating-widget-framework.ykpgp0928.dpdns.org)
-
-
 ---
 
 ## 配置摘要
