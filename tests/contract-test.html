@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Contract Alpha — Reference Widget 接入页</title>
+  <!-- 一个"空静态页面"：不依赖构建、不 import 任何内部模块 -->
+  <link rel="stylesheet" href="/examples/reference-widget/badge.css" />
+</head>
+<body>
+  <script>
+    window.ORBIT = {
+      launcherKey: "Alt+O",
+      launcherHint: false,
+      widgets: [{ id: "example-status", visible: true }]
+    };
+  </script>
+  <!-- defer 顺序：orbit.js 先（提供 window.Orbit），badge.js 后（register） -->
+  <script src="/dist/orbit.js" defer></script>
+  <script src="/examples/reference-widget/badge.js" defer></script>
+</body>
+</html>

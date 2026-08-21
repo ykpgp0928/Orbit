@@ -34,7 +34,10 @@ const targets = [
     name: "orbit",
     entry: join(srcRoot, "entry-orbit.js"),
     outfile: join(root, "dist/orbit.js"),
-    copyCss: false,
+    // M3: Notice CSS ships as its own file (dist/floating-widget-notice.css)
+    copyCss: true,
+    cssFrom: join(root, "src/widgets/notice/notice.css"),
+    cssTo: join(root, "dist/floating-widget-notice.css"),
   },
 ];
 

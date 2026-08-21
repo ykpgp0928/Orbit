@@ -39,4 +39,22 @@ describe("WidgetRegistry", () => {
     });
     assert.equal(getWidget("phase1-labeled").label, "Labeled");
   });
+
+  it("preserves declared capabilities (M4 fix)", () => {
+    registerWidget("phase1-caps", {
+      label: "Caps",
+      version: "0.4",
+      capabilities: { launcher: true, profile: false, draggable: false },
+      mount() {
+        return { destroy() {} };
+      },
+    });
+    const def = getWidget("phase1-caps");
+    assert.deepEqual(def.capabilities, {
+      launcher: true,
+      profile: false,
+      draggable: false,
+    });
+    assert.equal(def.version, "0.4");
+  });
 });

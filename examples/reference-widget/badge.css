@@ -1,0 +1,21 @@
+/*
+ * Orbit Reference Widget — "Status Badge" styles.
+ * Own styles only; deliberately uses no Orbit private classes.
+ * The badge does not depend on any runtime CSS file.
+ */
+.ref-badge {
+  /* base look is inlined on the element (see badge.js) — this file only
+     holds optional responsive tweaks a third-party author might add */
+}
+@media (max-width: 600px) {
+  .ref-badge {
+    left: 96px !important;
+    bottom: 12px !important;
+  }
+  .ref-badge-sheet {
+    right: 12px !important;
+    bottom: 12px !important;
+    left: 12px !important;
+    max-width: none !important;
+  }
+}

@@ -41,8 +41,7 @@ __modules["src/interaction/Gesture.js"] = function (__mod, __require) {
 /**
  * @param {GestureConfig} config
  * @param {GestureHandlers} handlers
- */
-function createGesture(config, handlers) {
+ */function createGesture(config, handlers) {
   const longPressMs = config.longPressMs != null ? config.longPressMs : 550;
   const clickThreshold = config.clickThreshold != null ? config.clickThreshold : 8;
   const longPressTapMax =
@@ -256,8 +255,7 @@ __modules["src/interaction/Drag.js"] = function (__mod, __require) {
 
 /**
  * @param {DragContext} ctx
- */
-function createDrag(ctx) {
+ */function createDrag(ctx) {
   let originX = 0;
   let originY = 0;
   let active = false;
@@ -360,8 +358,7 @@ __modules["src/interaction/Snap.js"] = function (__mod, __require) {
 /**
  * @param {SnapConfig} config
  * @param {SnapContext} ctx
- */
-function createSnap(config, ctx) {
+ */function createSnap(config, ctx) {
   let magnetSide = null; // "left" | "right" | null
 
   function getBallSize() {
@@ -578,8 +575,7 @@ __modules["src/interaction/ExpandPolicy.js"] = function (__mod, __require) {
  * Free / panel open direction.
  * @param {ExpandInput} input
  * @returns {{ expandLeft: boolean, expandDown: boolean }}
- */
-function resolveExpandDirection(input) {
+ */function resolveExpandDirection(input) {
   const pad = input.pad != null ? input.pad : 12;
   const vw = input.viewportW;
   const vh = input.viewportH;
@@ -611,8 +607,7 @@ function resolveExpandDirection(input) {
  * Dock 功能球纵向：上方不够堆叠高度且下方更宽裕 → 向下排。
  * @param {{ absTop: number, absBottom: number, stackH: number, viewportH: number, pad?: number }} input
  * @returns {{ dockDown: boolean }}
- */
-function resolveDockStackDirection(input) {
+ */function resolveDockStackDirection(input) {
   const pad = input.pad != null ? input.pad : 8;
   const spaceAbove = input.absTop;
   const spaceBelow = input.viewportH - input.absBottom;
@@ -630,8 +625,7 @@ function resolveDockStackDirection(input) {
  * @param {boolean} expandDown
  * @param {number} ballH
  * @param {number} openH
- */
-function expandDownTranslateY(isOpen, expandDown, ballH, openH) {
+ */function expandDownTranslateY(isOpen, expandDown, ballH, openH) {
   if (isOpen && expandDown) return openH - ballH;
   return 0;
 }
@@ -657,10 +651,15 @@ const registry = Object.create(null);
 /**
  * @param {string} id
  * @param {{ mount: Function, label?: string, version?: string, defaults?: object, unmount?: Function }} widget
- */
-function registerWidget(id, widget) {
+ */function registerWidget(id, widget) {
   if (!id || typeof id !== "string") {
     throw new Error("registerWidget requires a non-empty string id");
+  }
+  // M2 (Contract Alpha): ids must be namespaced / well-formed
+  if (!/^[a-z0-9][a-z0-9._-]*$/.test(id)) {
+    throw new Error(
+      "registerWidget id must match ^[a-z0-9][a-z0-9._-]*$ (got: " + id + ")"
+    );
   }
   if (!widget || typeof widget.mount !== "function") {
     throw new Error("registerWidget requires mount()");
@@ -672,28 +671,28 @@ function registerWidget(id, widget) {
     defaults: widget.defaults,
     mount: widget.mount,
     unmount: widget.unmount,
+    // M4 fix: preserve declared capabilities instead of dropping them,
+    // so consumers can inspect a definition's contract surface.
+    capabilities: widget.capabilities,
   };
 }
 
 /**
  * @param {string} id
- */
-function getWidget(id) {
+ */function getWidget(id) {
   return registry[id] || null;
 }
 
 /**
  * @returns {string[]}
- */
-function listWidgets() {
+ */function listWidgets() {
   return Object.keys(registry);
 }
 
 /**
  * @param {string} id
  * @param {object} ctx
- */
-function mountWidget(id, ctx) {
+ */function mountWidget(id, ctx) {
   const w = getWidget(id);
   if (!w) throw new Error("Unknown widget: " + id);
   return w.mount(ctx);
@@ -701,8 +700,7 @@ function mountWidget(id, ctx) {
 
 /**
  * Test / advanced: clear all definitions (not for production page use).
- */
-function _resetRegistryForTests() {
+ */function _resetRegistryForTests() {
   for (const k of Object.keys(registry)) {
     delete registry[k];
   }
@@ -726,7 +724,6 @@ var registerWidget = __dep0.registerWidget;
  * Proves the Shell is not Music-only: same spatial interaction language,
  * different content (time display).
  */
-
 /**
  * Format helpers
  */
@@ -754,8 +751,7 @@ function formatDate(d) {
  * @param {HTMLElement} ctx.root — floating root
  * @param {object} [ctx.refs] — { face, panel, dateEl, fullTimeEl }
  * @param {{ intervalMs?: number, showSeconds?: boolean }} [ctx.options]
- */
-function mount(ctx) {
+ */function mount(ctx) {
   const root = ctx && ctx.root;
   const refs = (ctx && ctx.refs) || {};
   const options = (ctx && ctx.options) || {};
@@ -824,8 +820,7 @@ __modules["src/core/LifecycleScope.js"] = function (__mod, __require) {
  *   dispose: (emitError?: (err: unknown) => void) => Promise<void>,
  *   disposed: boolean
  * }}
- */
-function createLifecycleScope() {
+ */function createLifecycleScope() {
   let disposed = false;
   /** @type {Set<() => void | Promise<void>>} */
   const cleanups = new Set();
@@ -903,12 +898,6 @@ var createLifecycleScope = __dep5.createLifecycleScope;
  * FWF Clock Host — minimal floating shell + Clock widget
  * Reuses Gesture / Drag / Snap (same interaction language as Music).
  */
-
-
-
-
-
-
 const CONFIG = {
   storageKey: "fwf-clock-pos-v1",
   snapThreshold: 40,
@@ -950,28 +939,40 @@ let clockApi = null;
 let eventsBound = false;
 let lifecycle = null;
 let booted = false;
+/** @type {object|null} M3: Contract ctx (standalone mode gets a local one) */
+let ctx = null;
 
 function clamp(v, min, max) {
   return Math.min(max, Math.max(min, v));
 }
 
 function loadPos() {
-  try {
-    const s = JSON.parse(localStorage.getItem(CONFIG.storageKey) || "{}");
-    if (s.x != null && s.y != null) {
-      posX = s.x;
-      posY = s.y;
+  let s = null;
+  // M3: Contract mode reads ctx.profile (orbit-profile:clock);
+  // standalone keeps the legacy key, one-time migration reads it as fallback.
+  if (ctx && ctx.profile) {
+    try { s = ctx.profile.get(); } catch (e) { s = null; }
+  }
+  if (!s) {
+    try {
+      s = JSON.parse(localStorage.getItem(CONFIG.storageKey) || "null");
+    } catch (e) {
+      s = null;
     }
-  } catch (e) {}
+  }
+  if (s && s.x != null && s.y != null) {
+    posX = s.x;
+    posY = s.y;
+  }
 }
 
 function savePos() {
-  try {
-    localStorage.setItem(
-      CONFIG.storageKey,
-      JSON.stringify({ x: posX, y: posY })
-    );
-  } catch (e) {}
+  const data = { x: posX, y: posY };
+  if (ctx && ctx.profile) {
+    try { ctx.profile.set(data); } catch (e) {}
+  } else {
+    try { localStorage.setItem(CONFIG.storageKey, JSON.stringify(data)); } catch (e) {}
+  }
 }
 
 function ballSizeNow() {
@@ -1434,12 +1435,29 @@ function resetHostState() {
   expandLeft = false;
   expandDown = false;
   booted = false;
+  ctx = null;
 }
 
 /**
  * WidgetInstance-style destroy (Phase 2). Idempotent.
- */
-function destroyClockWidget() {
+ * M4 fix: also terminates any active pointer session so document-level
+ * listeners and pointer capture are released on drag-in-flight destroy.
+ */function destroyClockWidget() {
+  if (moveRaf) {
+    cancelAnimationFrame(moveRaf);
+    moveRaf = 0;
+  }
+  pendingMove = null;
+  try {
+    if (gesture) gesture.cancel();
+    if (drag) drag.end();
+  } catch (e) {}
+  try {
+    document.removeEventListener("pointermove", onMove);
+    document.removeEventListener("pointerup", onUp);
+    document.removeEventListener("pointercancel", onUp);
+  } catch (e) {}
+
   if (lifecycle && !lifecycle.disposed) {
     // dispose is async but cleanups are sync — fire and clear
     lifecycle.dispose();
@@ -1497,7 +1515,8 @@ function init() {
     resetHostState();
   }
 
-  lifecycle = createLifecycleScope();
+  // M3: lifecycle comes from the Contract ctx (standalone supplies its own)
+  lifecycle = ctx.lifecycle;
   isMobile = window.innerWidth <= 600;
   loadPos();
   root = createDOM();
@@ -1537,15 +1556,91 @@ function init() {
   booted = true;
 }
 
+/**
+ * M3: minimal ctx for standalone single-file mode (no Orbit Runtime).
+ * Keeps the legacy storage key; visibility is a simple display toggle.
+ */
+function createStandaloneCtx() {
+  const scope = createLifecycleScope();
+  return {
+    lifecycle: scope,
+    visibility: {
+      setVisible: function (el, visible) {
+        if (!el) return;
+        if (visible) {
+          el.style.display = "";
+          el.style.visibility = "";
+          el.setAttribute("aria-hidden", "false");
+        } else {
+          el.style.display = "none";
+          el.setAttribute("aria-hidden", "true");
+        }
+      },
+    },
+    profile: {
+      get: function () {
+        try {
+          return JSON.parse(localStorage.getItem(CONFIG.storageKey) || "null");
+        } catch (e) {
+          return null;
+        }
+      },
+      set: function (obj) {
+        try {
+          localStorage.setItem(CONFIG.storageKey, JSON.stringify(obj));
+        } catch (e) {}
+      },
+      clear: function () {
+        try {
+          localStorage.removeItem(CONFIG.storageKey);
+        } catch (e) {}
+      },
+    },
+    portal: {
+      claim: function () {},
+      release: function () {},
+      list: function () {
+        return [];
+      },
+    },
+    launcher: {
+      open: function () {},
+      close: function () {},
+      toggle: function () {},
+    },
+  };
+}
+
+/**
+ * Contract mount (M3): idempotent; uses ctx services.
+ * @param {object} [ctxArg] — Contract ctx (Runtime-provided or standalone)
+ */
+function mountClock(ctxArg) {
+  ctx = ctxArg || createStandaloneCtx();
+  init();
+  return getClockInstance();
+}
+
+/** Clock as a Contract widget definition (M3). */const clockWidgetDefinition = {
+  id: "clock",
+  version: "0.4",
+  label: "Clock 时钟",
+  capabilities: {
+    launcher: true,
+    profile: true,
+    // draggable/dockable stay out of the v0.4 mandatory surface
+  },
+  mount: mountClock,
+};
+
 function boot() {
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init, { once: true });
   } else {
     init();
   }
-}
-function startClockWidget() {
-  boot();
+}function startClockWidget() {
+  mountClock();
   if (typeof window !== "undefined") {
     window.__FWF_CLOCK__ = {
       start: startClockWidget,
@@ -1556,23 +1651,25 @@ function startClockWidget() {
   }
 }
 
-/** @returns {HTMLElement | null} */
-function getClockRoot() {
+/** @returns {HTMLElement | null} */function getClockRoot() {
   return root;
 }
 
 /**
  * WidgetInstance shape for Orbit / tests
- * @returns {{ id: string, root: HTMLElement | null, destroy: Function }}
- */
-function getClockInstance() {
+ * @returns {{ id: string, root: HTMLElement | null, setVisible?: Function, destroy: Function }}
+ */function getClockInstance() {
   return {
     id: "clock",
-    root: root,
+    get root() {
+      return root;
+    },
+    setVisible: function (visible) {
+      if (ctx && ctx.visibility) ctx.visibility.setVisible(root, !!visible);
+    },
     destroy: destroyClockWidget,
   };
-}
-__mod.boot = boot;
+}__mod.boot = boot;
 __mod.init = init;
 __mod.destroy = destroyClockWidget;
 
@@ -1580,6 +1677,7 @@ if (typeof destroyClockWidget !== 'undefined') __mod.destroyClockWidget = destro
 if (typeof startClockWidget !== 'undefined') __mod.startClockWidget = startClockWidget;
 if (typeof getClockRoot !== 'undefined') __mod.getClockRoot = getClockRoot;
 if (typeof getClockInstance !== 'undefined') __mod.getClockInstance = getClockInstance;
+if (typeof clockWidgetDefinition !== 'undefined') __mod.clockWidgetDefinition = clockWidgetDefinition;
 if (typeof boot !== 'undefined') __mod.boot = boot;
 if (typeof init !== 'undefined') __mod.init = init;
 if (typeof destroy !== 'undefined') __mod.destroy = destroy;
@@ -1596,7 +1694,6 @@ var getClockInstance = __dep0.getClockInstance;
 /**
  * Clock widget entry — bundle to dist/floating-widget-clock.js
  */
-
 startClockWidget();
 
 if (typeof window !== "undefined") {

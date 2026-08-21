@@ -16,6 +16,7 @@ const required = [
   "floating-widget-music.css",
   "floating-widget-clock.js",
   "floating-widget-clock.css",
+  "floating-widget-notice.css",
 ];
 
 function sha256(file) {

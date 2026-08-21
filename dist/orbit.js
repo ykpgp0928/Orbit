@@ -28,10 +28,15 @@ const registry = Object.create(null);
 /**
  * @param {string} id
  * @param {{ mount: Function, label?: string, version?: string, defaults?: object, unmount?: Function }} widget
- */
-function registerWidget(id, widget) {
+ */function registerWidget(id, widget) {
   if (!id || typeof id !== "string") {
     throw new Error("registerWidget requires a non-empty string id");
+  }
+  // M2 (Contract Alpha): ids must be namespaced / well-formed
+  if (!/^[a-z0-9][a-z0-9._-]*$/.test(id)) {
+    throw new Error(
+      "registerWidget id must match ^[a-z0-9][a-z0-9._-]*$ (got: " + id + ")"
+    );
   }
   if (!widget || typeof widget.mount !== "function") {
     throw new Error("registerWidget requires mount()");
@@ -43,28 +48,28 @@ function registerWidget(id, widget) {
     defaults: widget.defaults,
     mount: widget.mount,
     unmount: widget.unmount,
+    // M4 fix: preserve declared capabilities instead of dropping them,
+    // so consumers can inspect a definition's contract surface.
+    capabilities: widget.capabilities,
   };
 }
 
 /**
  * @param {string} id
- */
-function getWidget(id) {
+ */function getWidget(id) {
   return registry[id] || null;
 }
 
 /**
  * @returns {string[]}
- */
-function listWidgets() {
+ */function listWidgets() {
   return Object.keys(registry);
 }
 
 /**
  * @param {string} id
  * @param {object} ctx
- */
-function mountWidget(id, ctx) {
+ */function mountWidget(id, ctx) {
   const w = getWidget(id);
   if (!w) throw new Error("Unknown widget: " + id);
   return w.mount(ctx);
@@ -72,8 +77,7 @@ function mountWidget(id, ctx) {
 
 /**
  * Test / advanced: clear all definitions (not for production page use).
- */
-function _resetRegistryForTests() {
+ */function _resetRegistryForTests() {
   for (const k of Object.keys(registry)) {
     delete registry[k];
   }
@@ -94,14 +98,17 @@ __modules["src/core/Launcher.js"] = function (__mod, __require) {
  * Open/close: light opacity + translate (no heavy backdrop-filter)
  */
 
-const LABELS = {
-  music: "Music 音乐",
-  clock: "Clock 时钟",
-};
-
 const STYLE_ID = "orbit-launcher-style";
 const ROOT_ID = "orbit-launcher";
 const ANIM_MS = 180;
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 function isCoarsePointer() {
   if (typeof window === "undefined") return false;
@@ -119,17 +126,6 @@ function ensureStyles() {
   const s = document.createElement("style");
   s.id = STYLE_ID;
   s.textContent = `
-/* Force-hide any Orbit-managed root (Music CSS uses display:block !important) */
-.orbit-hidden{
-  opacity:0 !important;
-  visibility:hidden !important;
-  pointer-events:none !important;
-  transition:opacity .22s ease, visibility .22s ease !important;
-}
-.orbit-hidden-final{
-  display:none !important;
-}
-
 #orbit-launcher{
   position:fixed;inset:0;z-index:100000;
   display:flex;align-items:center;justify-content:center;
@@ -231,8 +227,7 @@ function ensureStyles() {
 /**
  * @param {object} orbitApi
  * @param {() => string} getLauncherKey
- */
-function createLauncher(orbitApi, getLauncherKey) {
+ */function createLauncher(orbitApi, getLauncherKey) {
   let open = false;
   let root = null;
   let listEl = null;
@@ -306,20 +301,27 @@ function createLauncher(orbitApi, getLauncherKey) {
 
     listEl.innerHTML = hosts
       .map(function (id) {
-        const on = state[id] !== false;
-        const label = LABELS[id] || id;
+        // Honest state: only a mounted + visible instance counts as "on".
+        // A registered-but-not-mounted widget (not listed in ORBIT.widgets)
+        // shows as OFF; toggling it on mounts it.
+        const on = state[id] === true;
+        // M2: labels come from Contract / adapter metadata — never hardcoded.
+        const label =
+          typeof orbitApi.getLabel === "function"
+            ? orbitApi.getLabel(id)
+            : id;
         return (
           '<div class="ol-row" data-id="' +
-          id +
+          escapeHtml(id) +
           '">' +
           '<div><div class="ol-name">' +
-          label +
+          escapeHtml(label) +
           '</div><div class="ol-id">' +
-          id +
+          escapeHtml(id) +
           "</div></div>" +
           '<label class="ol-switch" title="显示 / 隐藏">' +
           '<input type="checkbox" data-ol-toggle="' +
-          id +
+          escapeHtml(id) +
           '"' +
           (on ? " checked" : "") +
           " />" +
@@ -591,8 +593,7 @@ function storageSet() {
  * @param {() => string} opts.getLauncherKey
  * @param {() => number} opts.getWidgetCount — registered hosts or visible instances
  * @param {boolean} opts.enabled
- */
-function maybeShowLauncherHint(opts) {
+ */function maybeShowLauncherHint(opts) {
   if (typeof document === "undefined") return;
   if (!opts || opts.enabled === false) return;
   if (storageGet()) return;
@@ -638,8 +639,7 @@ function maybeShowLauncherHint(opts) {
     el.classList.add("is-show");
   });
   window.setTimeout(dismiss, SHOW_MS);
-}
-function resetLauncherHintForDebug() {
+}function resetLauncherHintForDebug() {
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch (e) {}
@@ -717,8 +717,7 @@ function isCoarsePointer() {
 /**
  * @param {object} orbitApi
  * @param {() => string} getMode — 'ghost' | 'host-button' | 'none'
- */
-function createLauncherFallback(orbitApi, getMode) {
+ */function createLauncherFallback(orbitApi, getMode) {
   let btn = null;
 
   function visibleWidgetCount() {
@@ -775,6 +774,96 @@ if (typeof createLauncherFallback !== 'undefined') __mod.createLauncherFallback 
 
 };
 
+/* ---- src/core/LifecycleScope.js ---- */
+__modules["src/core/LifecycleScope.js"] = function (__mod, __require) {
+/**
+ * Orbit v0.3 — LifecycleScope
+ *
+ * Per-instance cleanup bag. Register external side effects with add(fn);
+ * dispose() runs them in reverse order, idempotently.
+ * One failing cleanup must not block the rest.
+ */
+
+/**
+ * @returns {{
+ *   add: (fn: () => void | Promise<void>) => () => void,
+ *   dispose: (emitError?: (err: unknown) => void) => Promise<void>,
+ *   disposed: boolean
+ * }}
+ */function createLifecycleScope() {
+  let disposed = false;
+  /** @type {Set<() => void | Promise<void>>} */
+  const cleanups = new Set();
+
+  /**
+   * @param {() => void | Promise<void>} fn
+   * @returns {() => void} unregister (no-op if already disposed)
+   */
+  function add(fn) {
+    if (typeof fn !== "function") {
+      throw new Error("LifecycleScope.add requires a function");
+    }
+    if (disposed) {
+      Promise.resolve()
+        .then(fn)
+        .catch(function () {});
+      return function () {};
+    }
+    cleanups.add(fn);
+    return function remove() {
+      cleanups.delete(fn);
+    };
+  }
+
+  /**
+   * @param {(err: unknown) => void} [emitError]
+   */
+  async function dispose(emitError) {
+    if (disposed) return;
+    disposed = true;
+    const list = Array.from(cleanups).reverse();
+    cleanups.clear();
+    for (let i = 0; i < list.length; i++) {
+      try {
+        await list[i]();
+      } catch (error) {
+        if (typeof emitError === "function") {
+          try {
+            emitError(error);
+          } catch (_) {}
+        }
+      }
+    }
+  }
+
+  return {
+    add: add,
+    dispose: dispose,
+    get disposed() {
+      return disposed;
+    },
+  };
+}
+
+if (typeof createLifecycleScope !== 'undefined') __mod.createLifecycleScope = createLifecycleScope;
+
+};
+
+/* ---- src/core/version.js ---- */
+__modules["src/core/version.js"] = function (__mod, __require) {
+/**
+ * Orbit — version (single source of truth)
+ *
+ * This is the ONLY place the runtime version string is authored.
+ * scripts/check-version.mjs enforces that it matches package.json
+ * "version" and that dist/orbit.js + key docs carry the same number.
+ */
+const VERSION = "0.4.0";
+
+if (typeof VERSION !== 'undefined') __mod.VERSION = VERSION;
+
+};
+
 /* ---- src/core/Orbit.js ---- */
 __modules["src/core/Orbit.js"] = function (__mod, __require) {
 var __dep0 = __require("src/core/WidgetRegistry.js");
@@ -788,6 +877,10 @@ var __dep2 = __require("src/core/LauncherHint.js");
 var maybeShowLauncherHint = __dep2.maybeShowLauncherHint;
 var __dep3 = __require("src/core/LauncherFallback.js");
 var createLauncherFallback = __dep3.createLauncherFallback;
+var __dep4 = __require("src/core/LifecycleScope.js");
+var createLifecycleScope = __dep4.createLifecycleScope;
+var __dep5 = __require("src/core/version.js");
+var VERSION = __dep5.VERSION;
 /**
  * Orbit Runtime — Phase 4 API surface
  *
@@ -799,10 +892,6 @@ var createLauncherFallback = __dep3.createLauncherFallback;
  * - destroy(id) = explicit teardown
  * - ORBIT.widgets omitting an already-mounted id does NOT destroy it
  */
-
-
-
-
 /** @type {object | null} */
 let mountedConfig = null;
 /** @type {boolean} */
@@ -837,19 +926,51 @@ const instances = new Map();
 /** @type {Map<string, Set<Function>>} */
 const listeners = new Map();
 
+/**
+ * Per-widget visibility persistence (local-first, M3 requirement).
+ * User toggle state (Launcher switch, notice close) survives reloads and
+ * wins over ORBIT.widgets defaults. Destroy clears the preference so a
+ * config-driven remount restores the default. Opt out with
+ * ORBIT.persistVisibility: false.
+ */
+const VIS_STORAGE_KEY = "orbit-visible-v1";
+
+function readVisiblePrefs() {
+  try {
+    const raw = localStorage.getItem(VIS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function saveVisiblePref(id, visible) {
+  try {
+    const prefs = readVisiblePrefs();
+    prefs[id] = !!visible;
+    localStorage.setItem(VIS_STORAGE_KEY, JSON.stringify(prefs));
+  } catch (e) {}
+}
+
+function persistVisibilityEnabled() {
+  const cfg = mountedConfig || readPageConfig();
+  return !cfg || cfg.persistVisibility !== false;
+}
+
 /** @type {ReturnType<typeof createLauncher> | null} */
 let launcher = null;
 /** @type {ReturnType<typeof createLauncherFallback> | null} */
 let fallback = null;
 
 const api = {
-  version: "0.3.0-phase5",
+  version: VERSION,
   mount: mount,
   register: register,
   list: list,
   get: get,
   listRegistered: listRegistered,
   listHosts: listHosts,
+  getLabel: getLabel,
   registerHost: registerHost,
   setVisible: setVisible,
   destroy: destroy,
@@ -858,6 +979,8 @@ const api = {
   closeLauncher: closeLauncher,
   on: on,
   off: off,
+  exportProfile: exportProfile,
+  importProfile: importProfile,
   registry: null,
   isMounted: function () {
     return mounted;
@@ -930,6 +1053,8 @@ function registerHost(id, adapter) {
     throw new Error("registerHost requires id and start()");
   }
   hostAdapters.set(id, {
+    label: adapter.label,
+    defaultVisible: adapter.defaultVisible !== false,
     start: adapter.start,
     getRoot:
       typeof adapter.getRoot === "function"
@@ -949,7 +1074,10 @@ function registerHost(id, adapter) {
 }
 
 /**
- * Widget v1 definition register (alias of registry).
+ * Widget v1 definition register (Contract Alpha, M2).
+ * Registers the definition AND bridges it onto the proven HostAdapter
+ * instance path (start / getRoot / destroy / visibility / launcher),
+ * so a Contract widget gets the same Runtime management as first-party hosts.
  * @param {object} definition
  */
 function register(definition) {
@@ -957,7 +1085,191 @@ function register(definition) {
     throw new Error("register requires definition.id");
   }
   registerWidget(definition.id, definition);
+  if (!hostAdapters.has(definition.id)) {
+    hostAdapters.set(definition.id, createContractAdapter(definition));
+  }
   return api;
+}
+
+// =========================================================================
+// Contract Alpha — Runtime services (M2)
+// ctx = { lifecycle, visibility, profile, portal, launcher }
+// =========================================================================
+
+function createContractCtx(id, definition) {
+  const scope = createLifecycleScope();
+
+  /** @type {HTMLElement[]} */
+  let portals = [];
+
+  const services = {
+    /** Per-instance cleanup bag; dispose() is idempotent. */
+    lifecycle: scope,
+
+    /** Single-element show/hide with aria coordination. */
+    visibility: {
+      setVisible: function (el, visible) {
+        setElementVisible(el, !!visible);
+      },
+    },
+
+    /** Per-widget-id namespaced local persistence (JSON only). */
+    profile: {
+      get: function () {
+        try {
+          const raw = localStorage.getItem("orbit-profile:" + id);
+          return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+          return null;
+        }
+      },
+      set: function (obj) {
+        try {
+          localStorage.setItem("orbit-profile:" + id, JSON.stringify(obj));
+        } catch (e) {}
+      },
+      clear: function () {
+        try {
+          localStorage.removeItem("orbit-profile:" + id);
+        } catch (e) {}
+      },
+    },
+
+    /** body-level sheet/menu ownership; Runtime hides + removes on destroy. */
+    portal: {
+      claim: function (el) {
+        if (el && portals.indexOf(el) < 0) portals.push(el);
+      },
+      release: function (el) {
+        const i = portals.indexOf(el);
+        if (i >= 0) portals.splice(i, 1);
+      },
+      list: function () {
+        return portals.slice();
+      },
+    },
+
+    /** Launcher access for the widget. */
+    launcher: {
+      open: openLauncher,
+      close: closeLauncher,
+      toggle: toggleLauncher,
+    },
+
+    /**
+     * Runtime-managed instance control (M3 requirement): lets a widget
+     * synchronize its OWN runtime state (e.g. a notice close button) with
+     * the Launcher switch and the persisted visibility preference.
+     */
+    instance: {
+      setVisible: function (visible) {
+        setVisible(definition.id, !!visible);
+      },
+      destroy: function () {
+        destroy(definition.id);
+      },
+    },
+  };
+
+  return { ctx: services, portals: portals };
+}
+
+/**
+ * Wrap a Contract definition as a HostAdapter.
+ * @param {object} definition
+ */
+function createContractAdapter(definition) {
+  let instance = null;
+  let ctxCtl = null;
+
+  const adapter = {
+    label: definition.label,
+    defaultVisible: definition.defaultVisible !== false,
+    start: function () {
+      if (instance) return true;
+      try {
+        ctxCtl = createContractCtx(definition.id, definition);
+        const mounted = definition.mount(ctxCtl.ctx);
+        if (!mounted || typeof mounted.destroy !== "function") {
+          throw new Error(
+            "Contract widget " + definition.id + " mount() must return a WidgetInstance with destroy()"
+          );
+        }
+        instance = mounted;
+        // delegate visibility only when the widget implements setVisible;
+        // otherwise applyDomVisibility falls through to generic DOM handling
+        if (typeof instance.setVisible === "function") {
+          adapter.setVisible = function (visible) {
+            instance.setVisible(!!visible);
+          };
+        } else {
+          delete adapter.setVisible;
+        }
+        return true;
+      } catch (e) {
+        emit("widgetError", { id: definition.id, phase: "mount", error: e });
+        console.error("[Orbit] contract mount failed", definition.id, e);
+        instance = null;
+        return false;
+      }
+    },
+    getRoot: function () {
+      return (instance && instance.root) || null;
+    },
+    getVisibilityTargets: function () {
+      const targets = [];
+      if (instance && instance.root) targets.push(instance.root);
+      // M3: WidgetInstance.portals() lets hosts (e.g. Music dock sheet)
+      // report body-level nodes without touching Runtime internals.
+      if (instance && typeof instance.portals === "function") {
+        try {
+          const extra = instance.portals() || [];
+          for (let i = 0; i < extra.length; i++) {
+            if (extra[i] && targets.indexOf(extra[i]) < 0) targets.push(extra[i]);
+          }
+        } catch (e) {}
+      }
+      if (ctxCtl) {
+        for (let i = 0; i < ctxCtl.portals.length; i++) {
+          if (ctxCtl.portals[i] && targets.indexOf(ctxCtl.portals[i]) < 0) {
+            targets.push(ctxCtl.portals[i]);
+          }
+        }
+      }
+      return targets;
+    },
+    destroy: function () {
+      if (instance) {
+        try {
+          if (typeof instance.destroy === "function") instance.destroy();
+        } catch (e) {
+          emit("widgetError", { id: definition.id, phase: "destroy", error: e });
+          console.error("[Orbit] contract destroy failed", definition.id, e);
+        }
+        // M2: Runtime owns teardown of the instance boundary
+        if (instance.root && instance.root.parentNode) {
+          try { instance.root.parentNode.removeChild(instance.root); } catch (e) {}
+        }
+        instance = null;
+      }
+      if (ctxCtl) {
+        try {
+          ctxCtl.ctx.lifecycle.dispose();
+        } catch (e) {}
+        // remove claimed portals (M2: Runtime owns portal teardown)
+        for (let i = 0; i < ctxCtl.portals.length; i++) {
+          const el = ctxCtl.portals[i];
+          try {
+            if (el && el.parentNode) el.parentNode.removeChild(el);
+          } catch (e) {}
+        }
+        ctxCtl.portals.length = 0;
+        ctxCtl = null;
+      }
+    },
+  };
+
+  return adapter;
 }
 
 function getOrCreateInstance(id) {
@@ -967,6 +1279,43 @@ function getOrCreateInstance(id) {
     instances.set(id, inst);
   }
   return inst;
+}
+
+/**
+ * Single-element visibility primitive (M2): shared by the host-adapter path
+ * (applyDomVisibility) and the Contract ctx.visibility service.
+ */
+function setElementVisible(el, visible) {
+  if (!el) return;
+  if (visible) {
+    if (el._orbitHideTimer) {
+      clearTimeout(el._orbitHideTimer);
+      el._orbitHideTimer = null;
+    }
+    if (el.classList) {
+      el.classList.remove("orbit-hidden", "orbit-hidden-final", "orbit-hiding");
+    }
+    el.style.display = "";
+    el.style.visibility = "";
+    el.style.opacity = "";
+    el.removeAttribute("hidden");
+    el.setAttribute("aria-hidden", "false");
+    // force reflow then allow transition from hidden state if needed
+    void el.offsetWidth;
+  } else {
+    el.setAttribute("aria-hidden", "true");
+    if (el.classList) {
+      el.classList.remove("orbit-hidden-final");
+      el.classList.add("orbit-hidden");
+    }
+    if (el._orbitHideTimer) clearTimeout(el._orbitHideTimer);
+    el._orbitHideTimer = setTimeout(function () {
+      el._orbitHideTimer = null;
+      if (el.classList && el.classList.contains("orbit-hidden")) {
+        el.classList.add("orbit-hidden-final");
+      }
+    }, 240);
+  }
 }
 
 /**
@@ -1001,37 +1350,7 @@ function applyDomVisibility(id, visible) {
   if (!targets.length) return false;
 
   for (let i = 0; i < targets.length; i++) {
-    const el = targets[i];
-    if (!el) continue;
-    if (visible) {
-      if (el._orbitHideTimer) {
-        clearTimeout(el._orbitHideTimer);
-        el._orbitHideTimer = null;
-      }
-      if (el.classList) {
-        el.classList.remove("orbit-hidden", "orbit-hidden-final", "orbit-hiding");
-      }
-      el.style.display = "";
-      el.style.visibility = "";
-      el.style.opacity = "";
-      el.removeAttribute("hidden");
-      el.setAttribute("aria-hidden", "false");
-      // force reflow then allow transition from hidden state if needed
-      void el.offsetWidth;
-    } else {
-      el.setAttribute("aria-hidden", "true");
-      if (el.classList) {
-        el.classList.remove("orbit-hidden-final");
-        el.classList.add("orbit-hidden");
-      }
-      if (el._orbitHideTimer) clearTimeout(el._orbitHideTimer);
-      el._orbitHideTimer = setTimeout(function () {
-        el._orbitHideTimer = null;
-        if (el.classList && el.classList.contains("orbit-hidden")) {
-          el.classList.add("orbit-hidden-final");
-        }
-      }, 240);
-    }
+    setElementVisible(targets[i], visible);
   }
   return true;
 }
@@ -1048,10 +1367,17 @@ function ensureStarted(id) {
     inst.started = false;
   }
   if (!inst.started) {
-    adapter.start();
-    inst.started = true;
+    // M4 fix: only mark started when the adapter actually mounted.
+    // Contract adapters return false on mount() throw, so a failed mount
+    // stays "not started" (Launcher OFF, next setVisible retries).
+    const ok = adapter.start() !== false;
+    if (ok) {
+      inst.started = true;
+    } else {
+      inst.visible = false;
+    }
   }
-  return true;
+  return inst.started;
 }
 
 function setVisible(id, visible) {
@@ -1060,17 +1386,19 @@ function setVisible(id, visible) {
   const inst = getOrCreateInstance(id);
 
   if (visible) {
-    ensureStarted(id);
-    inst.visible = true;
-    var tries = 0;
-    function paint() {
-      const ok = applyDomVisibility(id, true);
-      if (!ok && tries < 20) {
-        tries += 1;
-        setTimeout(paint, 50);
+    const started = ensureStarted(id);
+    inst.visible = started;
+    if (started) {
+      var tries = 0;
+      function paint() {
+        const ok = applyDomVisibility(id, true);
+        if (!ok && tries < 20) {
+          tries += 1;
+          setTimeout(paint, 50);
+        }
       }
+      paint();
     }
-    paint();
   } else {
     inst.visible = false;
     if (inst.started) {
@@ -1078,6 +1406,9 @@ function setVisible(id, visible) {
     }
   }
 
+  if (persistVisibilityEnabled()) {
+    saveVisiblePref(id, visible);
+  }
   emit("visibilityChange", { id: id, visible: visible });
   if (launcher && launcher.isOpen()) {
     launcher.renderList();
@@ -1088,6 +1419,8 @@ function setVisible(id, visible) {
 
 /**
  * Explicit destroy. Not implied by omitting id from widgets config.
+ * options.forget: also clear the persisted visibility preference so the
+ * next mount falls back to the ORBIT.widgets default.
  * @param {string} id
  * @param {{ forget?: boolean }} [options]
  */
@@ -1118,6 +1451,18 @@ function destroy(id, options) {
     inst.destroyed = true;
   }
 
+  // M4 fix: options.forget clears the persisted visibility preference
+  // (default: keep it — destroy is a program action, not a user preference).
+  if (options && options.forget) {
+    try {
+      const prefs = readVisiblePrefs();
+      if (id in prefs) {
+        delete prefs[id];
+        localStorage.setItem(VIS_STORAGE_KEY, JSON.stringify(prefs));
+      }
+    } catch (e) {}
+  }
+
   emit("destroy", { id: id, options: options || {} });
   if (launcher && launcher.isOpen()) {
     launcher.renderList();
@@ -1140,10 +1485,240 @@ function get(id) {
 
 function defaultWidgets() {
   const ids = [];
-  hostAdapters.forEach(function (_a, id) {
-    ids.push({ id: id, visible: true });
+  hostAdapters.forEach(function (a, id) {
+    // M4 fix: adapters may opt out of the default-on list (e.g. Notice) —
+    // consistent with the docs ("notice must be listed in ORBIT.widgets").
+    ids.push({ id: id, visible: a.defaultVisible !== false });
   });
   return ids;
+}
+
+/** @type {MutationObserver | null} */
+let bodyRecoveryObserver = null;
+
+/**
+ * Runtime-level generic styles. Injected at mount() time — independent of the
+ * Launcher panel ever being opened. Without these, setElementVisible()'s
+ * orbit-hidden classes would have no visual effect (e.g. Notice close button).
+ */
+const RUNTIME_STYLE_ID = "orbit-runtime-style";
+function ensureRuntimeStyles() {
+  if (typeof document === "undefined") return;
+  if (document.getElementById(RUNTIME_STYLE_ID)) return;
+  const s = document.createElement("style");
+  s.id = RUNTIME_STYLE_ID;
+  s.textContent =
+    "/* Orbit runtime — visibility primitives (setElementVisible) */" +
+    ".orbit-hidden{" +
+    "opacity:0 !important;visibility:hidden !important;pointer-events:none !important;" +
+    "transition:opacity .22s ease, visibility .22s ease !important;" +
+    "}" +
+    ".orbit-hidden-final{display:none !important;}";
+  document.head.appendChild(s);
+}
+
+/**
+ * M4 — Profile Alpha (local-first, portable).
+ *
+ * Envelope:
+ *   {
+ *     "schema": "orbit-profile/0.4",
+ *     "exportedAt": "<ISO>",
+ *     "runtime": { "launcherKey": "Alt+O", "visibility": { "<id>": bool } },
+ *     "widgets": { "<id>": <per-widget profile JSON>, "music": { state: <legacy> } }
+ *   }
+ *
+ * Data stays in the browser; export is always user-initiated.
+ */
+const PROFILE_SCHEMA = "orbit-profile/0.4";
+const PROFILE_PREFIX = "orbit-profile:";
+const MUSIC_LEGACY_KEY = "mp-state-v3";
+
+function collectWidgetProfiles() {
+  const out = {};
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || key.indexOf(PROFILE_PREFIX) !== 0) continue;
+      const id = key.slice(PROFILE_PREFIX.length);
+      try {
+        const raw = localStorage.getItem(key);
+        out[id] = raw ? JSON.parse(raw) : null;
+      } catch (e) {
+        out[id] = null; // corrupted single entry — export as null, never block
+      }
+    }
+  } catch (e) {}
+  return out;
+}
+
+function exportProfile() {
+  const profile = {
+    schema: PROFILE_SCHEMA,
+    exportedAt: new Date().toISOString(),
+    runtime: {
+      launcherKey: getLauncherKey(),
+      visibility: readVisiblePrefs(),
+    },
+    widgets: collectWidgetProfiles(),
+  };
+  // Music's legacy host state travels as widgets.music.state
+  try {
+    const raw = localStorage.getItem(MUSIC_LEGACY_KEY);
+    if (raw) {
+      try {
+        profile.widgets.music = Object.assign(
+          {},
+          profile.widgets.music || {},
+          { state: JSON.parse(raw) }
+        );
+      } catch (e) {}
+    }
+  } catch (e) {}
+  return profile;
+}
+
+/**
+ * Import a previously exported profile. Validation is strict on the
+ * envelope (schema), tolerant inside it: a corrupted widget entry is
+ * skipped without blocking the rest; unknown widget ids keep their data
+ * (they become usable if the widget is registered later).
+ * @param {object|string} input
+ * @returns {{ ok: boolean, error?: string, imported?: { widgets: string[], visibility: string[] } }}
+ */
+function importProfile(input) {
+  let profile = input;
+  if (typeof profile === "string") {
+    try {
+      profile = JSON.parse(profile);
+    } catch (e) {
+      return { ok: false, error: "invalid-json" };
+    }
+  }
+  if (!profile || typeof profile !== "object" || Array.isArray(profile)) {
+    return { ok: false, error: "not-an-object" };
+  }
+  if (profile.schema !== PROFILE_SCHEMA) {
+    return {
+      ok: false,
+      error: "unsupported-schema: " + String(profile.schema),
+    };
+  }
+
+  const imported = { widgets: [], visibility: [] };
+
+  // runtime.visibility → merge into persisted preferences (never wipe
+  // prefs for ids the imported profile does not mention)
+  if (
+    profile.runtime &&
+    typeof profile.runtime.visibility === "object" &&
+    profile.runtime.visibility !== null
+  ) {
+    const prefs = readVisiblePrefs();
+    for (const id of Object.keys(profile.runtime.visibility)) {
+      const v = profile.runtime.visibility[id];
+      if (typeof v === "boolean") {
+        prefs[id] = v;
+        imported.visibility.push(id);
+      }
+    }
+    try {
+      localStorage.setItem(VIS_STORAGE_KEY, JSON.stringify(prefs));
+    } catch (e) {}
+  }
+
+  // widgets → per-widget namespaced storage; corrupted entries skipped
+  if (
+    profile.widgets &&
+    typeof profile.widgets === "object" &&
+    profile.widgets !== null
+  ) {
+    for (const id of Object.keys(profile.widgets)) {
+      const w = profile.widgets[id];
+      if (!w || typeof w !== "object" || Array.isArray(w)) {
+        continue; // single-entry corruption tolerance
+      }
+      if (id === "music" && w.state && typeof w.state === "object") {
+        // legacy host state back to its own key; the rest to profile ns
+        try {
+          localStorage.setItem(MUSIC_LEGACY_KEY, JSON.stringify(w.state));
+        } catch (e) {}
+        const rest = Object.assign({}, w);
+        delete rest.state;
+        if (Object.keys(rest).length) {
+          try {
+            localStorage.setItem(PROFILE_PREFIX + id, JSON.stringify(rest));
+          } catch (e) {}
+        }
+      } else {
+        try {
+          localStorage.setItem(PROFILE_PREFIX + id, JSON.stringify(w));
+        } catch (e) {}
+      }
+      imported.widgets.push(id);
+    }
+  }
+
+  emit("profileImport", { imported: imported });
+  return { ok: true, imported: imported };
+}
+
+/**
+ * M3 fix — unified instance recovery for PJAX / theme body swaps.
+ *
+ * Some static-site themes (Hexo + PJAX etc.) replace document.body children
+ * during navigation. Widget roots that live in body then disappear. Music
+ * had its own pjax/observer revival; Clock and Notice (Contract widgets)
+ * had none. This Runtime-level observer re-attaches ANY started, non-destroyed
+ * instance root that vanished from body — no per-widget recovery code needed.
+ *
+ * Guards:
+ *  - inst.started && !inst.destroyed  → destroy() never revives
+ *  - hidden instances keep their hide state (classList travels with root)
+ */
+function ensureBodyRecovery() {
+  if (bodyRecoveryObserver || typeof document === "undefined") return;
+  bodyRecoveryObserver = new MutationObserver(function () {
+    if (!document.body) return;
+    hostAdapters.forEach(function (adapter, id) {
+      const inst = instances.get(id);
+      if (!inst || !inst.started || inst.destroyed) return;
+      if (!adapter || typeof adapter.getRoot !== "function") return;
+      let root = null;
+      try {
+        root = adapter.getRoot();
+      } catch (e) {}
+      if (!root) return;
+      if (document.body.contains(root)) return;
+      try {
+        document.body.appendChild(root);
+      } catch (e) {}
+      if (typeof adapter.onRootRestored === "function") {
+        try {
+          adapter.onRootRestored();
+        } catch (e) {}
+      }
+      // M4 fix: also re-attach claimed portals / visibility targets that
+      // left the body in the same swap (e.g. Music's dock sheet).
+      if (typeof adapter.getVisibilityTargets === "function") {
+        try {
+          const targets = adapter.getVisibilityTargets() || [];
+          for (let i = 0; i < targets.length; i++) {
+            const el = targets[i];
+            if (el && el !== root && !document.body.contains(el)) {
+              document.body.appendChild(el);
+            }
+          }
+        } catch (e) {}
+      }
+    });
+  });
+  // Watch <html> (subtree) instead of <body>: some PJAX themes replace the
+  // <body> element itself, which would silently kill a body-bound observer.
+  bodyRecoveryObserver.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+  });
 }
 
 /**
@@ -1172,10 +1747,14 @@ function mount(config) {
       mountedConfig.widgets) ||
     defaultWidgets();
 
+  // User visibility prefs (Launcher toggles / notice close) win over the
+  // config defaults; missing prefs fall back to the configured value.
+  const prefs = persistVisibilityEnabled() ? readVisiblePrefs() : {};
   widgets.forEach(function (w) {
     if (!w || !w.id) return;
     if (!hostAdapters.has(w.id)) return;
-    const vis = w.visible !== false;
+    const pref = prefs[w.id];
+    const vis = typeof pref === "boolean" ? pref : w.visible !== false;
     setVisible(w.id, vis);
   });
 
@@ -1183,6 +1762,9 @@ function mount(config) {
     ensureLauncher().bind();
     launcherBound = true;
   }
+
+  ensureRuntimeStyles();
+  ensureBodyRecovery();
 
   try {
     var hintEnabled = !mountedConfig || mountedConfig.launcherHint !== false;
@@ -1215,6 +1797,19 @@ function listRegistered() {
 
 function listHosts() {
   return Array.from(hostAdapters.keys());
+}
+
+/**
+ * M2: user-facing label for a host/widget — Contract metadata first,
+ * then adapter label, then the raw id.
+ * @param {string} id
+ */
+function getLabel(id) {
+  const def = getWidget(id);
+  if (def && def.label) return def.label;
+  const adapter = hostAdapters.get(id);
+  if (adapter && adapter.label) return adapter.label;
+  return id;
 }
 
 function toggleLauncher(trigger) {
@@ -1257,8 +1852,7 @@ api.registry = {
   get: getWidget,
   list: listWidgets,
   mountWidget: mountWidget,
-};
-__mod.Orbit = Orbit;
+};__mod.Orbit = Orbit;
 __mod.mount = mount;
 __mod.list = list;
 __mod.get = get;
@@ -1267,14 +1861,16 @@ __mod.destroy = destroy;
 __mod.toggleLauncher = toggleLauncher;
 __mod.registerHost = registerHost;
 __mod.register = register;
+__mod.getLabel = getLabel;
+__mod.exportProfile = exportProfile;
+__mod.importProfile = importProfile;
 __mod.on = on;
 __mod.off = off;
 __mod.registerWidget = registerWidget;
 __mod.getWidget = getWidget;
 __mod.listWidgets = listWidgets;
 __mod.mountWidget = mountWidget;
-
-__mod.default = Orbit;
+__mod.default = Orbit;
 
 if (typeof Orbit !== 'undefined') __mod.Orbit = Orbit;
 if (typeof mount !== 'undefined') __mod.mount = mount;
@@ -1285,6 +1881,9 @@ if (typeof destroy !== 'undefined') __mod.destroy = destroy;
 if (typeof toggleLauncher !== 'undefined') __mod.toggleLauncher = toggleLauncher;
 if (typeof registerHost !== 'undefined') __mod.registerHost = registerHost;
 if (typeof register !== 'undefined') __mod.register = register;
+if (typeof getLabel !== 'undefined') __mod.getLabel = getLabel;
+if (typeof exportProfile !== 'undefined') __mod.exportProfile = exportProfile;
+if (typeof importProfile !== 'undefined') __mod.importProfile = importProfile;
 if (typeof on !== 'undefined') __mod.on = on;
 if (typeof off !== 'undefined') __mod.off = off;
 if (typeof registerWidget !== 'undefined') __mod.registerWidget = registerWidget;
@@ -1322,8 +1921,7 @@ __modules["src/interaction/Gesture.js"] = function (__mod, __require) {
 /**
  * @param {GestureConfig} config
  * @param {GestureHandlers} handlers
- */
-function createGesture(config, handlers) {
+ */function createGesture(config, handlers) {
   const longPressMs = config.longPressMs != null ? config.longPressMs : 550;
   const clickThreshold = config.clickThreshold != null ? config.clickThreshold : 8;
   const longPressTapMax =
@@ -1537,8 +2135,7 @@ __modules["src/interaction/Drag.js"] = function (__mod, __require) {
 
 /**
  * @param {DragContext} ctx
- */
-function createDrag(ctx) {
+ */function createDrag(ctx) {
   let originX = 0;
   let originY = 0;
   let active = false;
@@ -1641,8 +2238,7 @@ __modules["src/interaction/Snap.js"] = function (__mod, __require) {
 /**
  * @param {SnapConfig} config
  * @param {SnapContext} ctx
- */
-function createSnap(config, ctx) {
+ */function createSnap(config, ctx) {
   let magnetSide = null; // "left" | "right" | null
 
   function getBallSize() {
@@ -1858,8 +2454,7 @@ __modules["src/interaction/Dock.js"] = function (__mod, __require) {
 
 /**
  * @param {DockHandlers} [handlers]
- */
-function createDock(handlers) {
+ */function createDock(handlers) {
   const h = handlers || {};
   /** @type {DockState} */
   let state = {
@@ -1992,8 +2587,7 @@ __modules["src/interaction/ExpandPolicy.js"] = function (__mod, __require) {
  * Free / panel open direction.
  * @param {ExpandInput} input
  * @returns {{ expandLeft: boolean, expandDown: boolean }}
- */
-function resolveExpandDirection(input) {
+ */function resolveExpandDirection(input) {
   const pad = input.pad != null ? input.pad : 12;
   const vw = input.viewportW;
   const vh = input.viewportH;
@@ -2025,8 +2619,7 @@ function resolveExpandDirection(input) {
  * Dock 功能球纵向：上方不够堆叠高度且下方更宽裕 → 向下排。
  * @param {{ absTop: number, absBottom: number, stackH: number, viewportH: number, pad?: number }} input
  * @returns {{ dockDown: boolean }}
- */
-function resolveDockStackDirection(input) {
+ */function resolveDockStackDirection(input) {
   const pad = input.pad != null ? input.pad : 8;
   const spaceAbove = input.absTop;
   const spaceBelow = input.viewportH - input.absBottom;
@@ -2044,8 +2637,7 @@ function resolveDockStackDirection(input) {
  * @param {boolean} expandDown
  * @param {number} ballH
  * @param {number} openH
- */
-function expandDownTranslateY(isOpen, expandDown, ballH, openH) {
+ */function expandDownTranslateY(isOpen, expandDown, ballH, openH) {
   if (isOpen && expandDown) return openH - ballH;
   return 0;
 }
@@ -2067,7 +2659,6 @@ var resolveDockStackDirection = __dep0.resolveDockStackDirection;
  * Owns: PANEL expand direction (via ExpandPolicy), mobile card geometry,
  * list-up, dock-down. Does NOT: pointer stream.
  */
-
 /**
  * @typedef {Object} LayoutContext
  * @property {() => HTMLElement | null} getRoot
@@ -2088,8 +2679,7 @@ var resolveDockStackDirection = __dep0.resolveDockStackDirection;
 
 /**
  * @param {LayoutContext} ctx
- */
-function createLayout(ctx) {
+ */function createLayout(ctx) {
   let expandLeft = false;
   let expandDown = false;
   let listUp = false;
@@ -2334,8 +2924,7 @@ __modules["src/media/AudioEngine.js"] = function (__mod, __require) {
 
 /**
  * @param {AudioEngineHandlers} [handlers]
- */
-function createAudioEngine(handlers) {
+ */function createAudioEngine(handlers) {
   const h = handlers || {};
   /** @type {HTMLAudioElement | null} */
   let el = null;
@@ -2461,82 +3050,6 @@ if (typeof createAudioEngine !== 'undefined') __mod.createAudioEngine = createAu
 
 };
 
-/* ---- src/core/LifecycleScope.js ---- */
-__modules["src/core/LifecycleScope.js"] = function (__mod, __require) {
-/**
- * Orbit v0.3 — LifecycleScope
- *
- * Per-instance cleanup bag. Register external side effects with add(fn);
- * dispose() runs them in reverse order, idempotently.
- * One failing cleanup must not block the rest.
- */
-
-/**
- * @returns {{
- *   add: (fn: () => void | Promise<void>) => () => void,
- *   dispose: (emitError?: (err: unknown) => void) => Promise<void>,
- *   disposed: boolean
- * }}
- */
-function createLifecycleScope() {
-  let disposed = false;
-  /** @type {Set<() => void | Promise<void>>} */
-  const cleanups = new Set();
-
-  /**
-   * @param {() => void | Promise<void>} fn
-   * @returns {() => void} unregister (no-op if already disposed)
-   */
-  function add(fn) {
-    if (typeof fn !== "function") {
-      throw new Error("LifecycleScope.add requires a function");
-    }
-    if (disposed) {
-      Promise.resolve()
-        .then(fn)
-        .catch(function () {});
-      return function () {};
-    }
-    cleanups.add(fn);
-    return function remove() {
-      cleanups.delete(fn);
-    };
-  }
-
-  /**
-   * @param {(err: unknown) => void} [emitError]
-   */
-  async function dispose(emitError) {
-    if (disposed) return;
-    disposed = true;
-    const list = Array.from(cleanups).reverse();
-    cleanups.clear();
-    for (let i = 0; i < list.length; i++) {
-      try {
-        await list[i]();
-      } catch (error) {
-        if (typeof emitError === "function") {
-          try {
-            emitError(error);
-          } catch (_) {}
-        }
-      }
-    }
-  }
-
-  return {
-    add: add,
-    dispose: dispose,
-    get disposed() {
-      return disposed;
-    },
-  };
-}
-
-if (typeof createLifecycleScope !== 'undefined') __mod.createLifecycleScope = createLifecycleScope;
-
-};
-
 /* ---- src/host/music-player-host.js ---- */
 __modules["src/host/music-player-host.js"] = function (__mod, __require) {
 var __dep0 = __require("src/interaction/Gesture.js");
@@ -2556,13 +3069,6 @@ var createLifecycleScope = __dep6.createLifecycleScope;
 /**
  * FWF Music Player Host（模块源码，请用 npm run build 打包后再给 Hexo 使用）
  */
-
-
-
-
-
-
-
 const _userCfg = (typeof window !== "undefined" && window.FWF_MUSIC) ? window.FWF_MUSIC : {};
 const CONFIG = {
     server: _userCfg.server || "netease",
@@ -3000,17 +3506,20 @@ const CONFIG = {
   // [Music Widget:PlaylistSource] Meting fetch (parity with src/widgets/music/PlaylistSource.js)
   function buildApiUrl(template) { return template.replace(":server", CONFIG.server).replace(":type", CONFIG.type).replace(":id", CONFIG.id).replace(":r", String(Math.random())); }
 
-  async function fetchPlaylist() {
+  async function fetchPlaylist(signal) {
     let lastErr = null;
     for (const api of CONFIG.apis) {
       try {
-        const res = await fetch(buildApiUrl(api), { mode: "cors" });
+        const res = await fetch(buildApiUrl(api), { mode: "cors", signal });
         if (!res.ok) throw new Error("HTTP " + res.status);
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
           return data.map((item, i) => ({ name: item.name || item.title || "Unknown", artist: item.artist || item.author || "Unknown", url: item.url, pic: item.pic || item.cover || "", lrc: item.lrc || "", index: i }));
         }
-      } catch (e) { lastErr = e; }
+      } catch (e) {
+        if (e && e.name === "AbortError") throw e;
+        lastErr = e;
+      }
     }
     throw lastErr || new Error("All Meting APIs failed");
   }
@@ -3844,42 +4353,70 @@ const CONFIG = {
   }
 
 
-  function bindEvents() {
-    if (!coverEl) return;
-    coverEl.addEventListener("pointerdown", onCoverPointerDown);
-    // 文档捕获阶段吞掉关闭后的合成 click（比只挡 cover 更稳）
-    if (!window.__mpGhostClickBlocker) {
-      window.__mpGhostClickBlocker = true;
-      document.addEventListener("click", (e) => {
-        var blocked =
-          Date.now() < ignoreBallToggleUntil ||
-          (gesture && Date.now() < gesture.getIgnoreUntil());
-        if (blocked) {
-          e.preventDefault();
-          e.stopPropagation();
-        }
-      }, true);
-    }
-    // 屏蔽 touch 后的合成 click，避免关闭 Dock 后又触发一次打开
-    coverEl.addEventListener("click", (e) => {
+  /**
+   * M1: every listener is NAMED and registered into `lifecycle` so that
+   * destroy() releases it in reverse order. No window.* global flags —
+   * ghost-click blocker state is module-scoped and reset on destroy.
+   */
+  function onDocGhostClick(e) {
+    var blocked =
+      Date.now() < ignoreBallToggleUntil ||
+      (gesture && Date.now() < gesture.getIgnoreUntil());
+    if (blocked) {
       e.preventDefault();
       e.stopPropagation();
-    });
-    root.addEventListener("mouseleave", onPlayerMouseLeave);
-    root.addEventListener("mouseenter", () => {
+    }
+  }
+
+  function onCoverClickGuard(e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  function bindEvents() {
+    if (!coverEl || eventsBound) return;
+    eventsBound = true;
+    const lc = lifecycle;
+    const track = (target, type, fn, opts) => {
+      if (!target) return;
+      target.addEventListener(type, fn, opts);
+      lc.add(() => {
+        try { target.removeEventListener(type, fn, opts); } catch (err) {}
+      });
+    };
+
+    track(coverEl, "pointerdown", onCoverPointerDown);
+
+    // 文档捕获阶段吞掉关闭后的合成 click；每轮启动只绑定一次，
+    // destroy 会经 lifecycle 移除并复位 ghostClickBlockerBound。
+    if (!ghostClickBlockerBound) {
+      ghostClickBlockerBound = true;
+      track(document, "click", onDocGhostClick, true);
+    }
+
+    // 屏蔽 touch 后的合成 click，避免关闭 Dock 后又触发一次打开
+    track(coverEl, "click", onCoverClickGuard);
+
+    track(root, "mouseleave", onPlayerMouseLeave);
+    const onRootEnter = () => {
       if (!isMobile) updateExpandDirection();
-    });
+    };
+    track(root, "mouseenter", onRootEnter);
+
     const dockPanel = ensureDockListPanel();
-    dockPanel.addEventListener("mouseleave", (e) => {
+    const onDockLeave = (e) => {
       const related = e.relatedTarget;
-      if (related && ((root && root.contains(related)) || dockPanel.contains(related))) return;
+      if (related && ((root && root.contains(related)) || (dockPanel && dockPanel.contains(related)))) return;
       onPlayerMouseLeave(e);
-    });
+    };
+    track(dockPanel, "mouseleave", onDockLeave);
 
     // Phase 2: prefer Template refs; fall back to query for safety
     const r = refs || Template.bindRefs(root);
     const bindEl = (el, fn) => {
-      if (el) el.addEventListener("click", (e) => { e.stopPropagation(); fn(e); });
+      if (!el) return;
+      const handler = (e) => { e.stopPropagation(); fn(e); };
+      track(el, "click", handler);
     };
 
     bindEl(r.playBtn, () => togglePlay());
@@ -3893,12 +4430,12 @@ const CONFIG = {
     bindEl(r.dockLoop, () => toggleLoop());
     bindEl(r.dockListBtn, () => toggleDockList());
 
-    if (r.progress) {
-      r.progress.addEventListener("click", (e) => {
-        e.stopPropagation();
-        var pr = r.progress.getBoundingClientRect(); seek((e.clientX - pr.left) / (pr.width || 1));
-      });
-    }
+    const onProgressClick = (e) => {
+      e.stopPropagation();
+      var pr = r.progress.getBoundingClientRect();
+      seek((e.clientX - pr.left) / (pr.width || 1));
+    };
+    track(r.progress, "click", onProgressClick);
 
     const onListItemClick = (e) => {
       const item = e.target.closest(".mp-list-item"); if (!item) return;
@@ -3906,34 +4443,38 @@ const CONFIG = {
       loadSong(idx, true);
       if (isDockListOpen && isMobile) closeDockList();
     };
-    if (r.listInner) r.listInner.addEventListener("click", onListItemClick);
-    if (r.dockListInner) r.dockListInner.addEventListener("click", onListItemClick);
+    track(r.listInner, "click", onListItemClick);
+    track(r.dockListInner, "click", onListItemClick);
 
-    document.addEventListener("pointerdown", (e) => {
+    const onOutsideDockList = (e) => {
       if (!isDockListOpen) return;
       const panel = r.dockSheet;
       const dockBtn = r.dockListBtn;
       if ((panel && panel.contains(e.target)) || (dockBtn && dockBtn.contains(e.target)) || (root && root.contains(e.target))) return;
       closeDockList();
-    }, { passive: true });
+    };
+    track(document, "pointerdown", onOutsideDockList, { passive: true });
 
-    document.addEventListener("pointerdown", (e) => {
+    const onOutsideCollapse = (e) => {
       if (!isMobile || (!isOpen && !isListOpen)) return;
       if (root && !root.contains(e.target)) {
         const dockList = r.dockSheet;
         if (dockList && dockList.contains(e.target)) return;
         collapseToBall();
       }
-    }, { passive: true });
+    };
+    track(document, "pointerdown", onOutsideCollapse, { passive: true });
 
-    window.addEventListener("resize", () => {
+    const onWindowResize = () => {
       // 当发生旋转等行为时重新更新 mobile 标志
       isMobile = window.innerWidth <= 600;
       const [nx, ny] = clampPosition(posX, posY);
       posX = nx; posY = ny; applyTransform(); syncDockFromPosition(); if (isDockListOpen) positionDockList();
       shellSync();
-    });
-    window.addEventListener("beforeunload", persistNow);
+    };
+    track(window, "resize", onWindowResize);
+
+    track(window, "beforeunload", onBeforeUnload);
   }
 
   let initialized = false, eventsBound = false;
@@ -3941,6 +4482,13 @@ const CONFIG = {
   let bodyObserver = null;
   let ownedPortals = [];
   let onPjaxComplete = null;
+  // M1: module-scoped boot/revival guards (no window.* globals)
+  let bootTimer = null;
+  let alive = false;
+  let ghostClickBlockerBound = false;
+  /** @type {AbortController | null} M4: cancels in-flight playlist fetch on destroy */
+  let fetchController = null;
+  function onBeforeUnload() { persistNow(); }
   function claimOwnedPortal(el) {
     if (el && ownedPortals.indexOf(el) < 0) ownedPortals.push(el);
   }
@@ -3973,6 +4521,7 @@ const CONFIG = {
     if (root.classList && root.classList.contains("orbit-hidden")) return;
     root.style.cssText += ";display:block;visibility:visible;opacity:1;pointer-events:auto;z-index:99999;";
     const fix = () => {
+      if (!root) return; // M1: never touch a destroyed root
       const before = { x: posX, y: posY }, [nx, ny] = clampPosition(posX, posY);
       posX = nx; posY = ny; applyTransform();
       if (Math.abs(before.x - nx) > 2 || Math.abs(before.y - ny) > 2) persistNow();
@@ -3984,7 +4533,10 @@ const CONFIG = {
   }
 
   async function init() {
-    if (!document.body) return setTimeout(init, 50);
+    if (!document.body) {
+      bootTimer = setTimeout(init, 50); // M1: cancellable via destroy()
+      return;
+    }
     if (!lifecycle || lifecycle.disposed) {
       lifecycle = createLifecycleScope();
     }
@@ -3993,6 +4545,7 @@ const CONFIG = {
     // Phase 2: mount shell via Template
     const mounted = Template.mount(document.body);
     root = mounted.root;
+    alive = true; // M1: revival guards (pjax / observer) may act again
     cacheDOMRefs();
     if (!coverEl) return;
     shellSync(); // Phase 1: initial class projection
@@ -4010,15 +4563,31 @@ const CONFIG = {
     initialized = true;
 
     try {
-      playlist = await fetchPlaylist(); renderList();
+      fetchController = new AbortController();
+      playlist = await fetchPlaylist(fetchController.signal);
+      if (!alive) return; // M4 fix: destroyed while fetching — never revive
+      renderList();
       const s = getState();
       if (s.index != null && s.index < playlist.length) currentIndex = s.index;
       loadSong(currentIndex, false);
       if (s.time && audio) {
-        const seekTo = () => { if (audio.readyState >= 1) { audio.currentTime = s.time; updateProgress(); audio.removeEventListener("loadedmetadata", seekTo); } };
-        audio.addEventListener("loadedmetadata", seekTo);
+        // M1: named handler, registered in lifecycle, removed on destroy
+        const onLoadedMetaSeek = () => {
+          if (audio && audio.readyState >= 1) {
+            try { audio.currentTime = s.time; } catch (err) {}
+            updateProgress();
+            try { audio.removeEventListener("loadedmetadata", onLoadedMetaSeek); } catch (err) {}
+          }
+        };
+        audio.addEventListener("loadedmetadata", onLoadedMetaSeek);
+        if (lifecycle) {
+          lifecycle.add(() => {
+            try { if (audio) audio.removeEventListener("loadedmetadata", onLoadedMetaSeek); } catch (err) {}
+          });
+        }
       }
     } catch (err) {
+      if (!alive) return; // M4 fix: aborted by destroy — do not touch DOM
       if (titleEl) titleEl.textContent = "加载失败"; if (artistEl) artistEl.textContent = "请检查网络或 API";
       if (listInner) listInner.innerHTML = '<div class="mp-empty">歌单加载失败</div>';
     }
@@ -4028,6 +4597,7 @@ const CONFIG = {
       bodyObserver = null;
     }
     bodyObserver = new MutationObserver(() => {
+      if (!alive) return; // M1: destroyed — never revive
       if (lifecycle && lifecycle.disposed) return;
       const existing = document.getElementById("music-player");
       if (!existing || !document.body.contains(existing)) {
@@ -4044,6 +4614,7 @@ const CONFIG = {
     if (!onPjaxComplete) {
       onPjaxComplete = function () {
         setTimeout(function () {
+          if (!alive) return; // M1: destroyed — never revive
           if (!document.getElementById("music-player")) {
             initialized = false;
             eventsBound = false;
@@ -4056,10 +4627,48 @@ const CONFIG = {
   }
 
   /**
-   * Phase 3 — destroy (idempotent). Cleans audio, observer, owned portals, root.
+   * Phase 3 + M1 — destroy (idempotent). Cleans audio, observer, owned portals,
+   * root, ALL lifecycle-registered listeners (reverse order), pending timers /
+   * rAF / gesture state, and module-scoped flags. No detached-root revival.
    * Does not remove foreign #mp-dock-list nodes we did not create.
    */
   function destroyMusicPlayer() {
+    alive = false;
+    if (bootTimer) { clearTimeout(bootTimer); bootTimer = null; }
+    if (moveRaf) { cancelAnimationFrame(moveRaf); moveRaf = 0; }
+    pendingMove = null;
+    if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    ignoreBallToggleUntil = 0;
+    ghostClickBlockerBound = false;
+
+    // M4 fix: cancel in-flight playlist fetch so its resolution can never
+    // render/load audio into a destroyed instance.
+    if (fetchController) {
+      try { fetchController.abort(); } catch (e) {}
+      fetchController = null;
+    }
+
+    // M4 fix: terminate any active pointer session (drag-in-flight destroy)
+    // so document-level listeners and pointer capture are released.
+    try {
+      if (gesture) {
+        const pid = gesture.getActivePointer();
+        if (pid != null && coverEl) {
+          try {
+            if (coverEl.hasPointerCapture && coverEl.hasPointerCapture(pid)) {
+              coverEl.releasePointerCapture(pid);
+            }
+          } catch (err) {}
+        }
+        gesture.cancel();
+      }
+    } catch (e) {}
+    try {
+      document.removeEventListener("pointermove", onDocPointerMove);
+      document.removeEventListener("pointerup", onDocPointerUp);
+      document.removeEventListener("pointercancel", onDocPointerUp);
+    } catch (e) {}
+
     try {
       if (musicEngine && typeof musicEngine.destroy === "function") musicEngine.destroy();
     } catch (e) {}
@@ -4094,6 +4703,27 @@ const CONFIG = {
     root = null;
     coverEl = null;
     refs = null;
+
+    // M1: reset lazy singletons + shell/gesture residue so remount starts clean
+    snap = null;
+    dockCtl = null;
+    layoutCtl = null;
+    gesture = null;
+    drag = null;
+    magnetSide = null;
+    lastDockSide = null;
+    dockAnchorX = null;
+    dockAnchorY = null;
+    shellSnapping = false;
+    shellDockClosing = false;
+    shellNoHoverExpand = false;
+    shellExpandLeft = false;
+    shellListClosing = false;
+    shellListUp = false;
+    shellDockDown = false;
+    shellMagnet = false;
+    shellMagnetSide = null;
+
     initialized = false;
     eventsBound = false;
     isOpen = false;
@@ -4102,8 +4732,7 @@ const CONFIG = {
     playlist = [];
   }
 
-/** 启动播放器（打包后会自动调用） */
-function startMusicPlayer() {
+/** 启动播放器（打包后会自动调用） */function startMusicPlayer() {
   boot();
   if (typeof window !== "undefined") {
     window.__FWF_MUSIC_API__ = {
@@ -4111,16 +4740,62 @@ function startMusicPlayer() {
       destroy: destroyMusicPlayer,
     };
   }
-}
-function destroyMusicPlayerExport() {
+}function destroyMusicPlayerExport() {
   destroyMusicPlayer();
 }
-__mod.boot = boot;
+
+/**
+ * M3 — Music as a Contract widget definition (MINIMAL adapter layer).
+ * The business shell (shellSync / dock / playlist / audio) stays untouched;
+ * this only wraps start/destroy/portal reporting so the Runtime and Launcher
+ * can drive Music through the same register/mount/destroy/visibility path as
+ * any other Contract widget. Full Contract refactor is v0.5 scope.
+ */const musicWidgetDefinition = {
+  id: "music",
+  version: "0.4",
+  label: "Music 音乐",
+  capabilities: {
+    launcher: true,
+    portal: true,
+  },
+  mount: function () {
+    startMusicPlayer();
+    // M4 fix: remember the root reference created by this mount so the
+    // Runtime's body-recovery can re-attach it after a PJAX body swap
+    // (a live getElementById() query would return null once detached).
+    const rootRef = document.getElementById("music-player");
+    return {
+      get root() {
+        return document.getElementById("music-player") || rootRef;
+      },
+      portals: function () {
+        const nodes = [];
+        // in-memory claimed portals first — they survive body swaps
+        for (let i = 0; i < ownedPortals.length; i++) {
+          if (ownedPortals[i] && nodes.indexOf(ownedPortals[i]) < 0) {
+            nodes.push(ownedPortals[i]);
+          }
+        }
+        const marked = document.querySelectorAll(
+          '[data-orbit-portal="music-dock-list"]'
+        );
+        for (let i = 0; i < marked.length; i++) {
+          if (nodes.indexOf(marked[i]) < 0) nodes.push(marked[i]);
+        }
+        const sheet = document.getElementById("mp-dock-list");
+        if (sheet && nodes.indexOf(sheet) < 0) nodes.push(sheet);
+        return nodes;
+      },
+      destroy: destroyMusicPlayer,
+    };
+  },
+};__mod.boot = boot;
 __mod.init = init;
 __mod.destroyMusicPlayer = destroyMusicPlayer;
 
 if (typeof startMusicPlayer !== 'undefined') __mod.startMusicPlayer = startMusicPlayer;
 if (typeof destroyMusicPlayerExport !== 'undefined') __mod.destroyMusicPlayerExport = destroyMusicPlayerExport;
+if (typeof musicWidgetDefinition !== 'undefined') __mod.musicWidgetDefinition = musicWidgetDefinition;
 if (typeof boot !== 'undefined') __mod.boot = boot;
 if (typeof init !== 'undefined') __mod.init = init;
 if (typeof destroyMusicPlayer !== 'undefined') __mod.destroyMusicPlayer = destroyMusicPlayer;
@@ -4137,7 +4812,6 @@ var registerWidget = __dep0.registerWidget;
  * Proves the Shell is not Music-only: same spatial interaction language,
  * different content (time display).
  */
-
 /**
  * Format helpers
  */
@@ -4165,8 +4839,7 @@ function formatDate(d) {
  * @param {HTMLElement} ctx.root — floating root
  * @param {object} [ctx.refs] — { face, panel, dateEl, fullTimeEl }
  * @param {{ intervalMs?: number, showSeconds?: boolean }} [ctx.options]
- */
-function mount(ctx) {
+ */function mount(ctx) {
   const root = ctx && ctx.root;
   const refs = (ctx && ctx.refs) || {};
   const options = (ctx && ctx.options) || {};
@@ -4238,12 +4911,6 @@ var createLifecycleScope = __dep5.createLifecycleScope;
  * FWF Clock Host — minimal floating shell + Clock widget
  * Reuses Gesture / Drag / Snap (same interaction language as Music).
  */
-
-
-
-
-
-
 const CONFIG = {
   storageKey: "fwf-clock-pos-v1",
   snapThreshold: 40,
@@ -4285,28 +4952,40 @@ let clockApi = null;
 let eventsBound = false;
 let lifecycle = null;
 let booted = false;
+/** @type {object|null} M3: Contract ctx (standalone mode gets a local one) */
+let ctx = null;
 
 function clamp(v, min, max) {
   return Math.min(max, Math.max(min, v));
 }
 
 function loadPos() {
-  try {
-    const s = JSON.parse(localStorage.getItem(CONFIG.storageKey) || "{}");
-    if (s.x != null && s.y != null) {
-      posX = s.x;
-      posY = s.y;
+  let s = null;
+  // M3: Contract mode reads ctx.profile (orbit-profile:clock);
+  // standalone keeps the legacy key, one-time migration reads it as fallback.
+  if (ctx && ctx.profile) {
+    try { s = ctx.profile.get(); } catch (e) { s = null; }
+  }
+  if (!s) {
+    try {
+      s = JSON.parse(localStorage.getItem(CONFIG.storageKey) || "null");
+    } catch (e) {
+      s = null;
     }
-  } catch (e) {}
+  }
+  if (s && s.x != null && s.y != null) {
+    posX = s.x;
+    posY = s.y;
+  }
 }
 
 function savePos() {
-  try {
-    localStorage.setItem(
-      CONFIG.storageKey,
-      JSON.stringify({ x: posX, y: posY })
-    );
-  } catch (e) {}
+  const data = { x: posX, y: posY };
+  if (ctx && ctx.profile) {
+    try { ctx.profile.set(data); } catch (e) {}
+  } else {
+    try { localStorage.setItem(CONFIG.storageKey, JSON.stringify(data)); } catch (e) {}
+  }
 }
 
 function ballSizeNow() {
@@ -4769,12 +5448,29 @@ function resetHostState() {
   expandLeft = false;
   expandDown = false;
   booted = false;
+  ctx = null;
 }
 
 /**
  * WidgetInstance-style destroy (Phase 2). Idempotent.
- */
-function destroyClockWidget() {
+ * M4 fix: also terminates any active pointer session so document-level
+ * listeners and pointer capture are released on drag-in-flight destroy.
+ */function destroyClockWidget() {
+  if (moveRaf) {
+    cancelAnimationFrame(moveRaf);
+    moveRaf = 0;
+  }
+  pendingMove = null;
+  try {
+    if (gesture) gesture.cancel();
+    if (drag) drag.end();
+  } catch (e) {}
+  try {
+    document.removeEventListener("pointermove", onMove);
+    document.removeEventListener("pointerup", onUp);
+    document.removeEventListener("pointercancel", onUp);
+  } catch (e) {}
+
   if (lifecycle && !lifecycle.disposed) {
     // dispose is async but cleanups are sync — fire and clear
     lifecycle.dispose();
@@ -4832,7 +5528,8 @@ function init() {
     resetHostState();
   }
 
-  lifecycle = createLifecycleScope();
+  // M3: lifecycle comes from the Contract ctx (standalone supplies its own)
+  lifecycle = ctx.lifecycle;
   isMobile = window.innerWidth <= 600;
   loadPos();
   root = createDOM();
@@ -4872,15 +5569,91 @@ function init() {
   booted = true;
 }
 
+/**
+ * M3: minimal ctx for standalone single-file mode (no Orbit Runtime).
+ * Keeps the legacy storage key; visibility is a simple display toggle.
+ */
+function createStandaloneCtx() {
+  const scope = createLifecycleScope();
+  return {
+    lifecycle: scope,
+    visibility: {
+      setVisible: function (el, visible) {
+        if (!el) return;
+        if (visible) {
+          el.style.display = "";
+          el.style.visibility = "";
+          el.setAttribute("aria-hidden", "false");
+        } else {
+          el.style.display = "none";
+          el.setAttribute("aria-hidden", "true");
+        }
+      },
+    },
+    profile: {
+      get: function () {
+        try {
+          return JSON.parse(localStorage.getItem(CONFIG.storageKey) || "null");
+        } catch (e) {
+          return null;
+        }
+      },
+      set: function (obj) {
+        try {
+          localStorage.setItem(CONFIG.storageKey, JSON.stringify(obj));
+        } catch (e) {}
+      },
+      clear: function () {
+        try {
+          localStorage.removeItem(CONFIG.storageKey);
+        } catch (e) {}
+      },
+    },
+    portal: {
+      claim: function () {},
+      release: function () {},
+      list: function () {
+        return [];
+      },
+    },
+    launcher: {
+      open: function () {},
+      close: function () {},
+      toggle: function () {},
+    },
+  };
+}
+
+/**
+ * Contract mount (M3): idempotent; uses ctx services.
+ * @param {object} [ctxArg] — Contract ctx (Runtime-provided or standalone)
+ */
+function mountClock(ctxArg) {
+  ctx = ctxArg || createStandaloneCtx();
+  init();
+  return getClockInstance();
+}
+
+/** Clock as a Contract widget definition (M3). */const clockWidgetDefinition = {
+  id: "clock",
+  version: "0.4",
+  label: "Clock 时钟",
+  capabilities: {
+    launcher: true,
+    profile: true,
+    // draggable/dockable stay out of the v0.4 mandatory surface
+  },
+  mount: mountClock,
+};
+
 function boot() {
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init, { once: true });
   } else {
     init();
   }
-}
-function startClockWidget() {
-  boot();
+}function startClockWidget() {
+  mountClock();
   if (typeof window !== "undefined") {
     window.__FWF_CLOCK__ = {
       start: startClockWidget,
@@ -4891,23 +5664,25 @@ function startClockWidget() {
   }
 }
 
-/** @returns {HTMLElement | null} */
-function getClockRoot() {
+/** @returns {HTMLElement | null} */function getClockRoot() {
   return root;
 }
 
 /**
  * WidgetInstance shape for Orbit / tests
- * @returns {{ id: string, root: HTMLElement | null, destroy: Function }}
- */
-function getClockInstance() {
+ * @returns {{ id: string, root: HTMLElement | null, setVisible?: Function, destroy: Function }}
+ */function getClockInstance() {
   return {
     id: "clock",
-    root: root,
+    get root() {
+      return root;
+    },
+    setVisible: function (visible) {
+      if (ctx && ctx.visibility) ctx.visibility.setVisible(root, !!visible);
+    },
     destroy: destroyClockWidget,
   };
-}
-__mod.boot = boot;
+}__mod.boot = boot;
 __mod.init = init;
 __mod.destroy = destroyClockWidget;
 
@@ -4915,9 +5690,146 @@ if (typeof destroyClockWidget !== 'undefined') __mod.destroyClockWidget = destro
 if (typeof startClockWidget !== 'undefined') __mod.startClockWidget = startClockWidget;
 if (typeof getClockRoot !== 'undefined') __mod.getClockRoot = getClockRoot;
 if (typeof getClockInstance !== 'undefined') __mod.getClockInstance = getClockInstance;
+if (typeof clockWidgetDefinition !== 'undefined') __mod.clockWidgetDefinition = clockWidgetDefinition;
 if (typeof boot !== 'undefined') __mod.boot = boot;
 if (typeof init !== 'undefined') __mod.init = init;
 if (typeof destroy !== 'undefined') __mod.destroy = destroy;
+
+};
+
+/* ---- src/widgets/notice/NoticeWidget.js ---- */
+__modules["src/widgets/notice/NoticeWidget.js"] = function (__mod, __require) {
+/**
+ * Orbit Notice Widget — third official widget (M3)
+ *
+ * A collapsible site-notice card. Deliberately heterogeneous vs Music
+ * (audio) and Clock (time): pure content + dismiss state, proving the
+ * Contract does not bind the widget to any business domain.
+ *
+ * Uses Contract services:
+ *   - ctx.lifecycle  — all listeners/cleanup registered here
+ *   - ctx.profile    — remembers dismissal (per-widget namespace)
+ *   - ctx.visibility — hide ≠ destroy (dismissed stays mounted, Runtime can re-show)
+ *   - ctx.launcher   — available but not required
+ *
+ * Config (optional): window.ORBIT.notice = { title, text }
+ *   - title:  card heading (default "公告")
+ *   - text:   announcement text; CONFIG WINS over anything saved in
+ *             profile, so theme updates always take effect
+ *
+ * Close (×) behavior: hides the card AND asks the Runtime to set the
+ * instance's visibility to false — the Launcher switch flips to OFF and the
+ * preference is persisted (orbit-visible-v1), so a later page load keeps the
+ * notice closed until the user re-enables it from the Launcher.
+ */
+
+function readConfig() {
+  if (typeof window === "undefined" || !window.ORBIT) return {};
+  const n = window.ORBIT.notice;
+  return n && typeof n === "object" ? n : {};
+}
+const noticeWidgetDefinition = {
+  id: "notice",
+  version: "0.4",
+  label: "Notice 公告",
+  // M4 fix: NOT default-on — the docs require listing notice in
+  // ORBIT.widgets explicitly; defaultWidgets() respects this.
+  defaultVisible: false,
+  capabilities: {
+    launcher: true,
+    profile: true,
+  },
+  mount: function (ctx) {
+    const cfg = readConfig();
+    const saved = ctx.profile.get() || {};
+    // Config is the author's intent and wins; profile text is only a
+    // fallback for the previous message before any config existed.
+    const title =
+      typeof cfg.title === "string" && cfg.title ? cfg.title : "公告";
+    const text =
+      typeof cfg.text === "string" && cfg.text
+        ? cfg.text
+        : typeof saved.text === "string" && saved.text
+          ? saved.text
+          : "站点公告：欢迎使用 Orbit 悬浮组件。";
+
+    const root = document.createElement("div");
+    root.id = "orbit-notice";
+    root.className = "orbit-notice";
+    root.setAttribute("role", "region");
+    root.setAttribute("aria-label", "站点公告");
+    root.style.cssText =
+      "position:fixed;top:20px;right:20px;z-index:99989;width:min(280px,88vw);" +
+      "border-radius:12px;background:#0f172a;color:#e2e8f0;" +
+      "font:13px/1.6 system-ui,sans-serif;box-shadow:0 8px 24px rgba(0,0,0,.28);" +
+      "overflow:hidden";
+
+    const head = document.createElement("div");
+    head.className = "orbit-notice-head";
+    head.style.cssText =
+      "display:flex;align-items:center;justify-content:space-between;" +
+      "padding:8px 12px;background:rgba(255,255,255,.06);font-weight:600";
+    const titleEl = document.createElement("span");
+    titleEl.className = "orbit-notice-title";
+    titleEl.textContent = title; // textContent: config never becomes markup
+    head.appendChild(titleEl);
+
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "orbit-notice-close";
+    closeBtn.setAttribute("aria-label", "关闭公告");
+    closeBtn.textContent = "×";
+    closeBtn.style.cssText =
+      "border:0;background:transparent;color:inherit;cursor:pointer;" +
+      "font:inherit;line-height:1;padding:2px 6px;border-radius:6px";
+    head.appendChild(closeBtn);
+
+    const body = document.createElement("div");
+    body.className = "orbit-notice-body";
+    body.style.cssText = "padding:10px 12px";
+    body.textContent = text;
+
+    root.appendChild(head);
+    root.appendChild(body);
+    document.body.appendChild(root);
+
+    const onClose = function () {
+      try {
+        ctx.profile.set({ title: title, text: text, dismissed: true });
+      } catch (e) {}
+      // Ask the Runtime to hide us + flip the Launcher switch + persist the
+      // preference. Falls back to direct DOM hiding for standalone use.
+      if (ctx.instance && typeof ctx.instance.setVisible === "function") {
+        ctx.instance.setVisible(false);
+      } else {
+        ctx.visibility.setVisible(root, false);
+      }
+    };
+    ctx.lifecycle.add(function () {
+      closeBtn.removeEventListener("click", onClose);
+    });
+    closeBtn.addEventListener("click", onClose);
+
+    ctx.lifecycle.add(function () {
+      if (root.parentNode) root.parentNode.removeChild(root);
+    });
+
+    return {
+      root: root,
+      setVisible: function (visible) {
+        ctx.visibility.setVisible(root, !!visible);
+      },
+      destroy: function () {
+        ctx.lifecycle.dispose();
+      },
+      snapshot: function () {
+        return { title: title, text: text };
+      },
+    };
+  },
+};
+
+if (typeof noticeWidgetDefinition !== 'undefined') __mod.noticeWidgetDefinition = noticeWidgetDefinition;
 
 };
 
@@ -4926,58 +5838,23 @@ __modules["src/entry-orbit.js"] = function (__mod, __require) {
 var __dep0 = __require("src/core/Orbit.js");
 var Orbit = __dep0.Orbit;
 var __dep1 = __require("src/host/music-player-host.js");
-var startMusicPlayer = __dep1.startMusicPlayer;
-var destroyMusicPlayer = __dep1.destroyMusicPlayer;
+var musicWidgetDefinition = __dep1.musicWidgetDefinition;
 var __dep2 = __require("src/host/clock-host.js");
-var startClockWidget = __dep2.startClockWidget;
-var destroyClockWidget = __dep2.destroyClockWidget;
-var getClockRoot = __dep2.getClockRoot;
+var clockWidgetDefinition = __dep2.clockWidgetDefinition;
+var __dep3 = __require("src/widgets/notice/NoticeWidget.js");
+var noticeWidgetDefinition = __dep3.noticeWidgetDefinition;
 /**
- * Orbit Runtime entry — Phase 4
- * Registers Music + Clock with destroy + visibility targets (no Runtime id hardcode).
+ * Orbit Runtime entry — Phase 4 / M3
+ * All widgets are Contract registrations (register → mount → destroy →
+ * visibility → Profile); the Runtime has zero hardcoded widget ids.
  */
 
 
 
-Orbit.registerHost("music", {
-  start: function () {
-    startMusicPlayer();
-  },
-  getRoot: function () {
-    return document.getElementById("music-player");
-  },
-  destroy: function () {
-    destroyMusicPlayer();
-  },
-  getVisibilityTargets: function () {
-    const nodes = [];
-    const root = document.getElementById("music-player");
-    if (root) nodes.push(root);
-    // Only portals marked as ours (Phase 3 ownership); fallback id for single-instance pages
-    const marked = document.querySelectorAll(
-      '[data-orbit-portal="music-dock-list"]'
-    );
-    if (marked && marked.length) {
-      for (let i = 0; i < marked.length; i++) nodes.push(marked[i]);
-    } else {
-      const sheet = document.getElementById("mp-dock-list");
-      if (sheet) nodes.push(sheet);
-    }
-    return nodes;
-  },
-});
 
-Orbit.registerHost("clock", {
-  start: function () {
-    startClockWidget();
-  },
-  getRoot: function () {
-    return getClockRoot() || document.getElementById("fwf-clock");
-  },
-  destroy: function () {
-    destroyClockWidget();
-  },
-});
+Orbit.register(musicWidgetDefinition);
+Orbit.register(clockWidgetDefinition);
+Orbit.register(noticeWidgetDefinition);
 
 if (typeof window !== "undefined") {
   window.Orbit = Orbit;
@@ -4986,7 +5863,10 @@ if (typeof window !== "undefined") {
       typeof window.ORBIT === "object" && window.ORBIT ? window.ORBIT : {}
     );
   };
-  if (document.readyState === "loading") {
+  // M2: wait for DOMContentLoaded even when defer scripts run at
+  // readyState "interactive" — guarantees all register() calls from other
+  // defer scripts (Contract widgets) ran before mount() reads ORBIT.widgets.
+  if (document.readyState === "loading" || document.readyState === "interactive") {
     document.addEventListener("DOMContentLoaded", boot);
   } else {
     boot();

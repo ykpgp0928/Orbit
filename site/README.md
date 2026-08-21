@@ -4,10 +4,10 @@
 
 对外品牌：**Orbit**  
 技术说明：Floating Widget Runtime（原 FWF）  
-当前版本：**0.3.0**（生命周期 · Launcher · ghost 恢复）
+当前版本：**0.4.0**（Runtime Hardening · Contract Alpha，开发中）
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.3.0-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.0-green.svg)](CHANGELOG.md)
 
 > English: Orbit is a tiny floating-widget runtime for static sites (Hexo, etc.). Shared drag / snap / expand; Music and Clock are the first widgets. Multi-widget pages use `dist/orbit.js` and a launcher panel.
 
@@ -40,6 +40,14 @@
 ### Clock
 
 球面时间 · 桌面悬停展开 · 手机点按 · 贴边与上下左右展开策略  
+
+### Notice（0.4）
+
+可折叠站点公告卡 · 关闭记忆（Profile 持久化，刷新不打扰）· 独立样式 `floating-widget-notice.css`
+
+> **启用方式**：公告不会自动出现——需要在 `window.ORBIT.widgets` 中显式加入
+> `{ id: "notice", visible: true }`（与 music/clock 一样）。未加入时它只出现在
+> Launcher 面板中且开关为「关」，点开即启用。可选配置 `window.ORBIT.notice = { text }`。
 
 ### Orbit Runtime（0.2）
 
@@ -122,7 +130,9 @@ npx --yes serve -p 3456 .
 |------|------|
 | `launcherKey` | 默认 `"Alt+O"` |
 | `launcherHint` | 是否首次提示，默认开启 |
-| `widgets` | `[{ id, visible }]`，`id` 为 `music` / `clock` |
+| `widgets` | `[{ id, visible }]`，`id` 为 `music` / `clock` / `notice` |
+| `notice` | 可选 `{ title, text }`：公告标题与文本（配置优先，主题更新即时生效） |
+| `persistVisibility` | 默认开启：用户的开/关操作写入 `localStorage`（`orbit-visible-v1`），刷新后保持；关闭公告同理。设 `false` 禁用持久化 |
 
 ### `window.FWF_MUSIC`
 
@@ -190,6 +200,10 @@ npm run prepare-site   # → site/ 供 Cloudflare 等静态部署
 | [docs/API.md](docs/API.md) | 接入与 Orbit API |
 | [docs/CONFIG.md](docs/CONFIG.md) | 配置项 |
 | [docs/THEME.md](docs/THEME.md) | 主题变量 |
+| [docs/PROFILE.md](docs/PROFILE.md) | Profile 导出 / 导入 / 清除 |
+| [docs/CONTRACT-ALPHA.md](docs/CONTRACT-ALPHA.md) | Widget Contract Alpha 接入指南 |
+| [docs/SECURITY.md](docs/SECURITY.md) | 安全注记（CSP / 外部音源 / 动态文本） |
+| [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md) | 发布检查清单（真机矩阵） |
 | [docs/phase-s-orbit.md](docs/phase-s-orbit.md) ~ [phase-c](docs/phase-c-orbit.md) | 0.2 阶段记录 |
 | [docs/PUBLISH.md](docs/PUBLISH.md) | GitHub / npm |
 | [docs/v0.3-iteration.md](docs/v0.3-iteration.md) | **v0.3 迭代流程与清单** |
@@ -202,6 +216,7 @@ npm run prepare-site   # → site/ 供 Cloudflare 等静态部署
 
 ## 版本与许可
 
+- **0.4.x**：Runtime Hardening · Contract Alpha（开发中）
 - **0.3.x**：destroy / LifecycleScope、ghost fallback、CI
 - **0.2.x**：Orbit 多 Widget、Launcher、移动端长按  
 - **0.1.x**：单文件 Music / Clock 成品  

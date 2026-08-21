@@ -1,6 +1,6 @@
 {
   "name": "floating-widget-framework",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Orbit — floating widget runtime (Music & Clock) with lifecycle, launcher, and multi-widget orchestration",
   "license": "MIT",
   "author": "",
@@ -17,9 +17,15 @@
   "files": [
     "dist",
     "demo",
+    "examples",
     "docs/API.md",
     "docs/CONFIG.md",
     "docs/THEME.md",
+    "docs/CONTRACT-ALPHA.md",
+    "docs/MIGRATION-v0.3.md",
+    "docs/PROFILE.md",
+    "docs/SECURITY.md",
+    "docs/RELEASE-CHECKLIST.md",
     "docs/phase6-publish.md",
     "README.md",
     "CHANGELOG.md",
@@ -32,8 +38,13 @@
     "test:unit": "node --test src/core/LifecycleScope.test.js src/core/WidgetRegistry.test.js src/interaction/ExpandPolicy.test.js",
     "test": "npm run test:unit && npm run test:normalize",
     "test:normalize": "node src/core/state.normalize.test.js",
+    "test:dom": "node tests/lifecycle.test.mjs && node tests/contract.test.mjs && node tests/three-widget.test.mjs",
     "check:dist": "node scripts/check-dist-sync.mjs",
-    "ci": "npm run build && npm run test:unit && npm run check:dist"
+    "check:links": "node scripts/check-links.mjs",
+    "check:version": "node scripts/check-version.mjs",
+    "check:pack": "node scripts/check-pack.mjs",
+    "verify": "npm run build && npm test && npm run test:dom && npm run check:dist && npm run check:links && npm run check:version && npm run check:pack",
+    "ci": "npm run verify"
   },
   "repository": {
     "type": "git",
@@ -43,5 +54,8 @@
     "url": "https://github.com/ykpgp0928/Orbit/issues"
   },
   "homepage": "https://orbit.ykpgp0928.dpdns.org/",
-  "type": "module"
+  "type": "module",
+  "devDependencies": {
+    "playwright-core": "^1.62.1"
+  }
 }

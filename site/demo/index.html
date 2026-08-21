@@ -3,10 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Orbit Demo — Music + Clock</title>
+  <title>Orbit Demo — Music + Clock + Notice</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
   <link rel="stylesheet" href="../dist/floating-widget-music.css" />
   <link rel="stylesheet" href="../dist/floating-widget-clock.css" />
+  <link rel="stylesheet" href="../dist/floating-widget-notice.css" />
   <style>
     :root {
       color-scheme: light dark;
@@ -66,7 +67,7 @@
 </head>
 <body>
   <div class="wrap">
-    <div class="badge">Orbit 0.2 · Demo</div>
+    <div class="badge">Orbit 0.4 · Demo</div>
     <h1>Orbit — 多 Widget 总览</h1>
     <p>
       本页<strong>不依赖 Hexo</strong>。右下角附近会出现两个悬浮组件：
@@ -107,8 +108,13 @@
       launcherHint: true,
       widgets: [
         { id: "music", visible: true },
-        { id: "clock", visible: true }
-      ]
+        { id: "clock", visible: true },
+	{ id: "notice", visible: true }
+      ],
+	notice: {
+    	    title: "公告",
+    	    text: "自定义公告内容，配置优先于历史记录"
+  	}
     };
   </script>
   <script src="../dist/orbit.js" defer></script>

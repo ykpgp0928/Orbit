@@ -16,6 +16,12 @@ export function registerWidget(id, widget) {
   if (!id || typeof id !== "string") {
     throw new Error("registerWidget requires a non-empty string id");
   }
+  // M2 (Contract Alpha): ids must be namespaced / well-formed
+  if (!/^[a-z0-9][a-z0-9._-]*$/.test(id)) {
+    throw new Error(
+      "registerWidget id must match ^[a-z0-9][a-z0-9._-]*$ (got: " + id + ")"
+    );
+  }
   if (!widget || typeof widget.mount !== "function") {
     throw new Error("registerWidget requires mount()");
   }
@@ -26,6 +32,9 @@ export function registerWidget(id, widget) {
     defaults: widget.defaults,
     mount: widget.mount,
     unmount: widget.unmount,
+    // M4 fix: preserve declared capabilities instead of dropping them,
+    // so consumers can inspect a definition's contract surface.
+    capabilities: widget.capabilities,
   };
 }
 

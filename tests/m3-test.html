@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>M3 — 三 Widget 并存（Music / Clock / Notice）</title>
+  <link rel="stylesheet" href="/dist/floating-widget-music.css" />
+  <link rel="stylesheet" href="/dist/floating-widget-clock.css" />
+  <link rel="stylesheet" href="/dist/floating-widget-notice.css" />
+</head>
+<body>
+  <script>
+    window.ORBIT = {
+      launcherKey: "Alt+O",
+      launcherHint: false,
+      widgets: [
+        { id: "music", visible: true },
+        { id: "clock", visible: true },
+        { id: "notice", visible: true }
+      ]
+    };
+  </script>
+  <script src="/dist/orbit.js" defer></script>
+</body>
+</html>

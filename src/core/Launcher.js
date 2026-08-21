@@ -3,14 +3,17 @@
  * Open/close: light opacity + translate (no heavy backdrop-filter)
  */
 
-const LABELS = {
-  music: "Music 音乐",
-  clock: "Clock 时钟",
-};
-
 const STYLE_ID = "orbit-launcher-style";
 const ROOT_ID = "orbit-launcher";
 const ANIM_MS = 180;
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 function isCoarsePointer() {
   if (typeof window === "undefined") return false;
@@ -28,17 +31,6 @@ function ensureStyles() {
   const s = document.createElement("style");
   s.id = STYLE_ID;
   s.textContent = `
-/* Force-hide any Orbit-managed root (Music CSS uses display:block !important) */
-.orbit-hidden{
-  opacity:0 !important;
-  visibility:hidden !important;
-  pointer-events:none !important;
-  transition:opacity .22s ease, visibility .22s ease !important;
-}
-.orbit-hidden-final{
-  display:none !important;
-}
-
 #orbit-launcher{
   position:fixed;inset:0;z-index:100000;
   display:flex;align-items:center;justify-content:center;
@@ -215,20 +207,27 @@ export function createLauncher(orbitApi, getLauncherKey) {
 
     listEl.innerHTML = hosts
       .map(function (id) {
-        const on = state[id] !== false;
-        const label = LABELS[id] || id;
+        // Honest state: only a mounted + visible instance counts as "on".
+        // A registered-but-not-mounted widget (not listed in ORBIT.widgets)
+        // shows as OFF; toggling it on mounts it.
+        const on = state[id] === true;
+        // M2: labels come from Contract / adapter metadata — never hardcoded.
+        const label =
+          typeof orbitApi.getLabel === "function"
+            ? orbitApi.getLabel(id)
+            : id;
         return (
           '<div class="ol-row" data-id="' +
-          id +
+          escapeHtml(id) +
           '">' +
           '<div><div class="ol-name">' +
-          label +
+          escapeHtml(label) +
           '</div><div class="ol-id">' +
-          id +
+          escapeHtml(id) +
           "</div></div>" +
           '<label class="ol-switch" title="显示 / 隐藏">' +
           '<input type="checkbox" data-ol-toggle="' +
-          id +
+          escapeHtml(id) +
           '"' +
           (on ? " checked" : "") +
           " />" +

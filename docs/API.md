@@ -1,4 +1,4 @@
-# Orbit / FWF 公开 API（v0.3 Phase 4）
+# Orbit / FWF 公开 API（v0.4.0）
 
 > 交付形态：浏览器单文件。  
 > **多 Widget** 用 `dist/orbit.js`；**单 Widget** 用 music / clock 独立包。
@@ -47,10 +47,12 @@
 | `openLauncher()` / `closeLauncher()` | 开 / 关面板 |
 | `getLauncherKey()` | 当前快捷键文案 |
 | `on` / `off` | 事件（如 `visibilityChange`） |
-| `version` | 如 `0.3.0-phase4` |
-| `destroy(id)` | **显式销毁**（配置里省略 id 不会销毁） |
+| `version` | 如 `0.4.0` |
+| `destroy(id, options?)` | **显式销毁**（配置里省略 id 不会销毁）；`options.forget: true` 同时清除该 widget 的持久化可见性偏好 |
 | `get(id)` | 实例快照 |
 | `register(definition)` | Widget 定义注册 |
+| `exportProfile()` | 导出本地 Profile（schema / runtime 可见性 / 各 Widget 状态）为对象 |
+| `importProfile(jsonOrObj)` | 导入 Profile（schema 严格校验、单项损坏容错、可见性合并）；返回 `{ ok, imported? } 或 { ok:false, error }` |
 
 ### 1.3 `window.ORBIT` 配置
 
@@ -58,7 +60,9 @@
 |------|------|------|
 | `launcherKey` | string | 默认 `Alt+O` |
 | `launcherHint` | boolean | 首次右下角提示，默认 true |
-| `widgets` | array | `{ id: "music"\|"clock", visible?: boolean }` |
+| `widgets` | array | `{ id: "music"\|"clock"\|"notice", visible?: boolean }` |
+| `notice` | object | 可选 `{ title, text }`，公告标题与文本 |
+| `persistVisibility` | boolean | 默认 true：开关状态写入 `localStorage["orbit-visible-v1"]`，刷新后保持用户偏好；`false` 禁用 |
 
 ---
 
@@ -120,4 +124,6 @@ npm run build
 |------|------|
 | `0.1.x` | 单 Widget 成品 |
 | `0.2.x` | Orbit 多 Widget + Launcher |
+| `0.3.x` | destroy / LifecycleScope、ghost 恢复 |
+| `0.4.x` | Runtime Hardening · Contract Alpha（开发中） |
 | `1.0` | 计划锁定对外 API（未到） |

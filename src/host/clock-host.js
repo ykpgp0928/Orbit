@@ -53,28 +53,40 @@ let clockApi = null;
 let eventsBound = false;
 let lifecycle = null;
 let booted = false;
+/** @type {object|null} M3: Contract ctx (standalone mode gets a local one) */
+let ctx = null;
 
 function clamp(v, min, max) {
   return Math.min(max, Math.max(min, v));
 }
 
 function loadPos() {
-  try {
-    const s = JSON.parse(localStorage.getItem(CONFIG.storageKey) || "{}");
-    if (s.x != null && s.y != null) {
-      posX = s.x;
-      posY = s.y;
+  let s = null;
+  // M3: Contract mode reads ctx.profile (orbit-profile:clock);
+  // standalone keeps the legacy key, one-time migration reads it as fallback.
+  if (ctx && ctx.profile) {
+    try { s = ctx.profile.get(); } catch (e) { s = null; }
+  }
+  if (!s) {
+    try {
+      s = JSON.parse(localStorage.getItem(CONFIG.storageKey) || "null");
+    } catch (e) {
+      s = null;
     }
-  } catch (e) {}
+  }
+  if (s && s.x != null && s.y != null) {
+    posX = s.x;
+    posY = s.y;
+  }
 }
 
 function savePos() {
-  try {
-    localStorage.setItem(
-      CONFIG.storageKey,
-      JSON.stringify({ x: posX, y: posY })
-    );
-  } catch (e) {}
+  const data = { x: posX, y: posY };
+  if (ctx && ctx.profile) {
+    try { ctx.profile.set(data); } catch (e) {}
+  } else {
+    try { localStorage.setItem(CONFIG.storageKey, JSON.stringify(data)); } catch (e) {}
+  }
 }
 
 function ballSizeNow() {
@@ -537,12 +549,30 @@ function resetHostState() {
   expandLeft = false;
   expandDown = false;
   booted = false;
+  ctx = null;
 }
 
 /**
  * WidgetInstance-style destroy (Phase 2). Idempotent.
+ * M4 fix: also terminates any active pointer session so document-level
+ * listeners and pointer capture are released on drag-in-flight destroy.
  */
 export function destroyClockWidget() {
+  if (moveRaf) {
+    cancelAnimationFrame(moveRaf);
+    moveRaf = 0;
+  }
+  pendingMove = null;
+  try {
+    if (gesture) gesture.cancel();
+    if (drag) drag.end();
+  } catch (e) {}
+  try {
+    document.removeEventListener("pointermove", onMove);
+    document.removeEventListener("pointerup", onUp);
+    document.removeEventListener("pointercancel", onUp);
+  } catch (e) {}
+
   if (lifecycle && !lifecycle.disposed) {
     // dispose is async but cleanups are sync — fire and clear
     lifecycle.dispose();
@@ -600,7 +630,8 @@ function init() {
     resetHostState();
   }
 
-  lifecycle = createLifecycleScope();
+  // M3: lifecycle comes from the Contract ctx (standalone supplies its own)
+  lifecycle = ctx.lifecycle;
   isMobile = window.innerWidth <= 600;
   loadPos();
   root = createDOM();
@@ -640,6 +671,84 @@ function init() {
   booted = true;
 }
 
+/**
+ * M3: minimal ctx for standalone single-file mode (no Orbit Runtime).
+ * Keeps the legacy storage key; visibility is a simple display toggle.
+ */
+function createStandaloneCtx() {
+  const scope = createLifecycleScope();
+  return {
+    lifecycle: scope,
+    visibility: {
+      setVisible: function (el, visible) {
+        if (!el) return;
+        if (visible) {
+          el.style.display = "";
+          el.style.visibility = "";
+          el.setAttribute("aria-hidden", "false");
+        } else {
+          el.style.display = "none";
+          el.setAttribute("aria-hidden", "true");
+        }
+      },
+    },
+    profile: {
+      get: function () {
+        try {
+          return JSON.parse(localStorage.getItem(CONFIG.storageKey) || "null");
+        } catch (e) {
+          return null;
+        }
+      },
+      set: function (obj) {
+        try {
+          localStorage.setItem(CONFIG.storageKey, JSON.stringify(obj));
+        } catch (e) {}
+      },
+      clear: function () {
+        try {
+          localStorage.removeItem(CONFIG.storageKey);
+        } catch (e) {}
+      },
+    },
+    portal: {
+      claim: function () {},
+      release: function () {},
+      list: function () {
+        return [];
+      },
+    },
+    launcher: {
+      open: function () {},
+      close: function () {},
+      toggle: function () {},
+    },
+  };
+}
+
+/**
+ * Contract mount (M3): idempotent; uses ctx services.
+ * @param {object} [ctxArg] — Contract ctx (Runtime-provided or standalone)
+ */
+function mountClock(ctxArg) {
+  ctx = ctxArg || createStandaloneCtx();
+  init();
+  return getClockInstance();
+}
+
+/** Clock as a Contract widget definition (M3). */
+export const clockWidgetDefinition = {
+  id: "clock",
+  version: "0.4",
+  label: "Clock 时钟",
+  capabilities: {
+    launcher: true,
+    profile: true,
+    // draggable/dockable stay out of the v0.4 mandatory surface
+  },
+  mount: mountClock,
+};
+
 function boot() {
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init, { once: true });
@@ -649,7 +758,7 @@ function boot() {
 }
 
 export function startClockWidget() {
-  boot();
+  mountClock();
   if (typeof window !== "undefined") {
     window.__FWF_CLOCK__ = {
       start: startClockWidget,
@@ -667,12 +776,17 @@ export function getClockRoot() {
 
 /**
  * WidgetInstance shape for Orbit / tests
- * @returns {{ id: string, root: HTMLElement | null, destroy: Function }}
+ * @returns {{ id: string, root: HTMLElement | null, setVisible?: Function, destroy: Function }}
  */
 export function getClockInstance() {
   return {
     id: "clock",
-    root: root,
+    get root() {
+      return root;
+    },
+    setVisible: function (visible) {
+      if (ctx && ctx.visibility) ctx.visibility.setVisible(root, !!visible);
+    },
     destroy: destroyClockWidget,
   };
 }
