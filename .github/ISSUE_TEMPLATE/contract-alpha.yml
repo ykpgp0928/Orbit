@@ -1,0 +1,64 @@
+name: Contract Alpha / Runtime 问题
+description: 生命周期、显隐、Profile、Portal、Launcher 等契约与 Runtime 行为
+title: "[contract-alpha] "
+labels: ["contract-alpha"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        用于报告与 Contract / Runtime 语义相关的问题（隐藏≠销毁、destroy、Profile、Portal 等）。
+        站点接入请用「主题 / 站点试点反馈」；写 Widget 请用「外部 Widget 接入反馈」。
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 问题领域
+      options:
+        - lifecycle / destroy / remount
+        - visibility / 持久化
+        - profile 导入导出
+        - portal
+        - launcher
+        - register / mount 失败
+        - 其他
+    validations:
+      required: true
+
+  - type: input
+    id: orbit-version
+    attributes:
+      label: Orbit 版本
+      placeholder: 0.4.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: 最小复现
+      description: 页面类型、关键配置、操作步骤；若有报错请粘贴控制台信息
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: regression
+    attributes:
+      label: 补充
+      options:
+        - label: 在官方 Demo 也可复现
+        - label: 仅在自定义主题 / 站点出现
+        - label: 与 PJAX 或 body 替换有关

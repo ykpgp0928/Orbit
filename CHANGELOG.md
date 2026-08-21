@@ -138,7 +138,7 @@
 
 ### 文档
 
-- `docs/v0.3-iteration.md`、各 Phase 记录、`MIGRATION-v0.3.md`、`DEVELOPMENT.md`
+- `docs/history/v0.3-iteration.md`、各 Phase 记录、`MIGRATION-v0.3.md`、`DEVELOPMENT.md`
 
 ## 0.2.0 — 2026-08-14
 

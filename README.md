@@ -190,6 +190,12 @@ npm run prepare-site   # → site/ 供 Cloudflare 等静态部署
 | `src/host/` | Music / Clock 宿主 |
 | `src/widgets/` | Widget 内容 |
 | `src/entry-*.js` | 打包入口 |
+| `docs/` | 公开文档（API / Contract / Profile…） |
+| `docs/plans/` | 版本方案（v0.4 / v0.5） |
+| `docs/history/` | 历史阶段记录（按版本：`v0.1/` / `v0.2/` / `v0.3/`） |
+| `legacy/` | 历史 CSS/JS 快照（build 回退用） |
+| `examples/` | 外部作者参考 Widget |
+| `tests/` | 单元与 DOM 回归 |
 
 ---
 
@@ -202,14 +208,19 @@ npm run prepare-site   # → site/ 供 Cloudflare 等静态部署
 | [docs/THEME.md](docs/THEME.md) | 主题变量 |
 | [docs/PROFILE.md](docs/PROFILE.md) | Profile 导出 / 导入 / 清除 |
 | [docs/CONTRACT-ALPHA.md](docs/CONTRACT-ALPHA.md) | Widget Contract Alpha 接入指南 |
+| [docs/PILOT.md](docs/PILOT.md) | **外部试点说明**（征集站长 / Widget 作者） |
 | [docs/SECURITY.md](docs/SECURITY.md) | 安全注记（CSP / 外部音源 / 动态文本） |
 | [docs/RELEASE-CHECKLIST.md](docs/RELEASE-CHECKLIST.md) | 发布检查清单（真机矩阵） |
-| [docs/phase-s-orbit.md](docs/phase-s-orbit.md) ~ [phase-c](docs/phase-c-orbit.md) | 0.2 阶段记录 |
+| [docs/history/v0.1/](docs/history/v0.1/) | 0.1 阶段记录（FWF 基线 → Music/Clock 成品） |
+| [docs/history/v0.2/phase-s-orbit.md](docs/history/v0.2/phase-s-orbit.md) ~ [phase-c](docs/history/v0.2/phase-c-orbit.md) | 0.2 阶段记录 |
 | [docs/PUBLISH.md](docs/PUBLISH.md) | GitHub / npm |
-| [docs/v0.3-iteration.md](docs/v0.3-iteration.md) | **v0.3 迭代流程与清单** |
+| [docs/history/v0.3/v0.3-iteration.md](docs/history/v0.3/v0.3-iteration.md) | **v0.3 迭代流程与清单** |
 | [docs/MIGRATION-v0.3.md](docs/MIGRATION-v0.3.md) | 0.2 → 0.3 迁移 |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | 二次开发 / Widget 约定 |
-| [docs/phase0-v0.3-freeze.md](docs/phase0-v0.3-freeze.md) | v0.3 Phase 0 基线冻结 |
+| [docs/history/v0.3/phase0-v0.3-freeze.md](docs/history/v0.3/phase0-v0.3-freeze.md) | v0.3 Phase 0 基线冻结 |
+| [docs/plans/v0.4-runtime-hardening.md](docs/plans/v0.4-runtime-hardening.md) | **v0.4 方案**：Runtime Hardening |
+| [docs/plans/v0.4-midterm-review.md](docs/plans/v0.4-midterm-review.md) | v0.4 半程评估 |
+| [docs/plans/v0.5-external-adoption.md](docs/plans/v0.5-external-adoption.md) | **v0.5 方案**：外部采用验证 |
 | [CHANGELOG.md](CHANGELOG.md) | 版本记录 |
 
 ---

@@ -49,4 +49,4 @@ Orbit.registerHost("music", {
 
 - [API.md](./API.md) · [CONFIG.md](./CONFIG.md) · [DEVELOPMENT.md](./DEVELOPMENT.md)
 - [CHANGELOG.md](../CHANGELOG.md) 0.3.0 条目
-- 0.3 迭代记录：[v0.3-iteration.md](./v0.3-iteration.md)
+- 0.3 迭代记录：[v0.3-iteration.md](./history/v0.3-iteration.md)

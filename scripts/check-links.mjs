@@ -13,12 +13,20 @@ import { fileURLToPath } from "url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
 
+function listMarkdown(dir) {
+  const out = [];
+  for (const name of readdirSync(dir, { withFileTypes: true })) {
+    const abs = join(dir, name.name);
+    if (name.isDirectory()) out.push(...listMarkdown(abs));
+    else if (name.isFile() && name.name.endsWith(".md")) out.push(abs);
+  }
+  return out;
+}
+
 const files = [
   join(root, "README.md"),
   join(root, "CHANGELOG.md"),
-  ...readdirSync(join(root, "docs"))
-    .filter((f) => f.endsWith(".md"))
-    .map((f) => join(root, "docs", f)),
+  ...listMarkdown(join(root, "docs")),
 ];
 
 // inline links: [text](path)  |  reference definitions: [label]: path

@@ -1,0 +1,113 @@
+name: 主题 / 站点试点反馈
+description: 在真实博客或主题中挂载 Orbit 后的问题与体验
+title: "[theme-adapter] "
+labels: ["theme-adapter"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢参与试点。请尽量填写环境信息，便于复现。
+        文档：README · [CONTRACT-ALPHA](../blob/main/docs/CONTRACT-ALPHA.md) · [试点说明](../blob/main/docs/PILOT.md)
+
+  - type: input
+    id: site-url
+    attributes:
+      label: 站点或 Demo 地址
+      description: 可公开访问的链接（若不便公开可写「仅本地」）
+      placeholder: https://
+    validations:
+      required: false
+
+  - type: dropdown
+    id: generator
+    attributes:
+      label: 静态生成器 / 形态
+      options:
+        - Hexo
+        - Hugo
+        - Astro
+        - 纯静态 HTML
+        - 其他
+    validations:
+      required: true
+
+  - type: input
+    id: theme
+    attributes:
+      label: 主题名称与版本
+      placeholder: 例如 Butterfly 4.x / Fluid / 自写主题
+    validations:
+      required: true
+
+  - type: input
+    id: orbit-version
+    attributes:
+      label: Orbit 版本
+      description: package 版本或 dist 构建日期 / git tag
+      placeholder: 0.4.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: widgets
+    attributes:
+      label: 已启用的组件
+      multiple: true
+      options:
+        - music
+        - clock
+        - notice
+        - 自定义 Widget
+    validations:
+      required: true
+
+  - type: textarea
+    id: env
+    attributes:
+      label: 浏览器与设备
+      description: 例如 Chrome 120 / iOS Safari / 桌面或手机；是否开启 PJAX
+      placeholder: |
+        浏览器：
+        设备：
+        PJAX / 全页刷新：
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 现象与期望
+      description: 实际发生了什么？你期望什么？
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. …
+        2. …
+    validations:
+      required: false
+
+  - type: textarea
+    id: config
+    attributes:
+      label: 相关配置片段（可打码）
+      description: window.ORBIT / inject 片段，请去掉隐私信息
+      render: javascript
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: 影响范围（多选）
+      options:
+        - label: 仅样式 / z-index / 主题冲突
+        - label: 拖拽 / 吸附 / 展开
+        - label: 手机长按 / Launcher
+        - label: PJAX / 路由后组件消失或重复
+        - label: 显隐 / 刷新后状态
+        - label: 其他

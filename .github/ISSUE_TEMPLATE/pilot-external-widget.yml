@@ -1,0 +1,84 @@
+name: 外部 Widget 接入反馈
+description: 仅使用公开 API / 文档开发 Widget 时的问题与建议
+title: "[external-widget] "
+labels: ["external-widget"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请尽量只依赖发行包与公开文档（不要 import 仓库 `src/`）。
+        参考：[CONTRACT-ALPHA](../blob/main/docs/CONTRACT-ALPHA.md) · [reference-widget](../tree/main/examples/reference-widget) · [试点说明](../blob/main/docs/PILOT.md)
+
+  - type: input
+    id: widget-name
+    attributes:
+      label: Widget 名称 / id
+      placeholder: 例如 example-status、mysite.progress
+    validations:
+      required: true
+
+  - type: input
+    id: widget-repo
+    attributes:
+      label: Widget 仓库或代码链接
+      description: 便于确认未依赖私有实现（可选）
+    validations:
+      required: false
+
+  - type: input
+    id: orbit-version
+    attributes:
+      label: Orbit 版本
+      placeholder: 0.4.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: used-services
+    attributes:
+      label: 使用到的 ctx 服务
+      multiple: true
+      options:
+        - lifecycle
+        - visibility
+        - profile
+        - portal
+        - launcher
+        - instance
+    validations:
+      required: true
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: 你想做的能力
+      description: 用一两句话描述 Widget 目标
+    validations:
+      required: true
+
+  - type: textarea
+    id: friction
+    attributes:
+      label: 卡在哪里
+      description: 文档不清、API 不足、挂载时机、销毁泄漏、类型/示例缺失等
+    validations:
+      required: true
+
+  - type: dropdown
+    id: doc-enough
+    attributes:
+      label: 仅靠公开文档能否完成接入？
+      options:
+        - 能，文档足够
+        - 大致能，但走了弯路
+        - 不能，必须读源码或询问作者
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: 对 Contract / 文档的建议
+      description: 缺哪个 API、哪段文档、哪个示例（可选）
+    validations:
+      required: false

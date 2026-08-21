@@ -16,9 +16,9 @@ const targets = [
     name: "music",
     entry: join(srcRoot, "entry-music.js"),
     outfile: join(root, "dist/floating-widget-music.js"),
-    cssFrom: existsSync(join(root, "working/music-player.css"))
-      ? join(root, "working/music-player.css")
-      : join(root, "baseline/music-player.css"),
+    cssFrom: existsSync(join(root, "legacy/working/music-player.css"))
+      ? join(root, "legacy/working/music-player.css")
+      : join(root, "legacy/baseline/music-player.css"),
     cssTo: join(root, "dist/floating-widget-music.css"),
     copyCss: true,
   },

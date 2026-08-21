@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 文档与 README
+    url: https://github.com/ykpgp0928/Orbit#readme
+    about: 接入前请先看 README、CONTRACT-ALPHA 与配置说明
+  - name: 在线 Demo
+    url: https://orbit.ykpgp0928.dpdns.org/demo
+    about: Music + Clock + Launcher 演示页
