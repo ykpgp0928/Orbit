@@ -42,6 +42,7 @@
 | `mount(config?)` | 按配置启动（入口会自动调用） |
 | `list()` | `[{ id, visible }]` |
 | `listHosts()` | 已注册宿主 id |
+| `listLauncherIds()` | Launcher 面板展示的 id（尊重 `ORBIT.widgets`） |
 | `setVisible(id, bool)` | 显示 / 隐藏 |
 | `toggleLauncher()` | 开关管理面板 |
 | `openLauncher()` / `closeLauncher()` | 开 / 关面板 |
@@ -61,8 +62,9 @@
 | `launcherKey` | string | 默认 `Alt+O` |
 | `launcherHint` | boolean | 首次右下角提示，默认 true |
 | `widgets` | array | `{ id: "music"\|"clock"\|"notice", visible?: boolean }` |
-| `notice` | object | 可选 `{ title, text }`，公告标题与文本 |
+| `notice` | object | 可选 `{ title, text, position, offset, top, right, bottom, left, zIndex }`，见 [CONFIG.md](./CONFIG.md) Notice 节 |
 | `persistVisibility` | boolean | 默认 true：开关状态写入 `localStorage["orbit-visible-v1"]`，刷新后保持用户偏好；`false` 禁用 |
+| `launcherShowAll` | boolean | 默认 false：Launcher 只显示 `widgets` 里声明的组件；`true` 时显示全部已注册宿主 |
 
 ---
 

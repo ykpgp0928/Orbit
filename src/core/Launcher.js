@@ -194,22 +194,26 @@ export function createLauncher(orbitApi, getLauncherKey) {
       }
     }
 
-    const hosts = orbitApi.listHosts();
+    // Prefer listLauncherIds (respects ORBIT.widgets) over listHosts (all registered).
+    const hosts =
+      typeof orbitApi.listLauncherIds === "function"
+        ? orbitApi.listLauncherIds()
+        : orbitApi.listHosts();
     const state = {};
     orbitApi.list().forEach(function (row) {
       state[row.id] = row.visible;
     });
 
     if (!hosts.length) {
-      listEl.innerHTML = '<div class="ol-empty">当前没有已注册的 Widget</div>';
+      listEl.innerHTML = '<div class="ol-empty">当前没有已加载的 Widget</div>';
       return;
     }
 
     listEl.innerHTML = hosts
       .map(function (id) {
         // Honest state: only a mounted + visible instance counts as "on".
-        // A registered-but-not-mounted widget (not listed in ORBIT.widgets)
-        // shows as OFF; toggling it on mounts it.
+        // Listed-but-not-yet-started (e.g. visible:false) shows as OFF;
+        // toggling it on mounts it.
         const on = state[id] === true;
         // M2: labels come from Contract / adapter metadata — never hardcoded.
         const label =

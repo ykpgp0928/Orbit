@@ -47,7 +47,7 @@
 
 > **启用方式**：公告不会自动出现——需要在 `window.ORBIT.widgets` 中显式加入
 > `{ id: "notice", visible: true }`（与 music/clock 一样）。未加入时它只出现在
-> Launcher 面板中且开关为「关」，点开即启用。可选配置 `window.ORBIT.notice = { text }`。
+> Launcher 面板中且开关为「关」，点开即启用。可选配置 `window.ORBIT.notice = { text, position: "top-right" }`（位置预设见 docs/CONFIG.md）。
 
 ### Orbit Runtime（0.2）
 
@@ -131,7 +131,7 @@ npx --yes serve -p 3456 .
 | `launcherKey` | 默认 `"Alt+O"` |
 | `launcherHint` | 是否首次提示，默认开启 |
 | `widgets` | `[{ id, visible }]`，`id` 为 `music` / `clock` / `notice` |
-| `notice` | 可选 `{ title, text }`：公告标题与文本（配置优先，主题更新即时生效） |
+| `notice` | 可选 `{ title, text, position, offset, top/right/bottom/left, zIndex }`：文案与**位置**（配置优先） |
 | `persistVisibility` | 默认开启：用户的开/关操作写入 `localStorage`（`orbit-visible-v1`），刷新后保持；关闭公告同理。设 `false` 禁用持久化 |
 
 ### `window.FWF_MUSIC`

@@ -100,6 +100,7 @@ const api = {
   get: get,
   listRegistered: listRegistered,
   listHosts: listHosts,
+  listLauncherIds: listLauncherIds,
   getLabel: getLabel,
   registerHost: registerHost,
   setVisible: setVisible,
@@ -902,7 +903,7 @@ function mount(config) {
       enabled: hintEnabled,
       getLauncherKey: getLauncherKey,
       getWidgetCount: function () {
-        return hostAdapters.size;
+        return typeof listLauncherIds === "function" ? listLauncherIds().length : hostAdapters.size;
       },
     });
   } catch (e) {}
@@ -926,6 +927,45 @@ function listRegistered() {
 }
 
 function listHosts() {
+  return Array.from(hostAdapters.keys());
+}
+
+/**
+ * Ids shown in the Launcher panel.
+ *
+ * - If ORBIT.launcherShowAll === true → every registered host.
+ * - Else if ORBIT.widgets is a non-empty array → only those ids that are
+ *   registered (站长显式加载的组件), plus any extra instances already started
+ *   (e.g. dynamic register + setVisible).
+ * - Else (no widgets config) → all registered hosts (same as listHosts).
+ *
+ * This keeps the panel honest: orbit.js always registers music/clock/notice,
+ * but the panel should not list Notice when the site never put it in widgets.
+ */
+function listLauncherIds() {
+  const cfg = mountedConfig || readPageConfig();
+  if (cfg && cfg.launcherShowAll === true) {
+    return Array.from(hostAdapters.keys());
+  }
+  if (cfg && Array.isArray(cfg.widgets) && cfg.widgets.length) {
+    const ids = [];
+    const seen = Object.create(null);
+    for (let i = 0; i < cfg.widgets.length; i++) {
+      const w = cfg.widgets[i];
+      if (!w || !w.id || seen[w.id]) continue;
+      if (!hostAdapters.has(w.id)) continue;
+      seen[w.id] = true;
+      ids.push(w.id);
+    }
+    instances.forEach(function (inst, id) {
+      if (seen[id]) return;
+      if (!inst.started || inst.destroyed) return;
+      if (!hostAdapters.has(id)) return;
+      seen[id] = true;
+      ids.push(id);
+    });
+    return ids;
+  }
   return Array.from(hostAdapters.keys());
 }
 
