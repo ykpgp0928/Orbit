@@ -1,7 +1,8 @@
-# Orbit / FWF 公开 API（v0.4.0）
+# Orbit 公开 API（v0.4.0）
 
 > 交付形态：浏览器单文件。  
-> **多 Widget** 用 `dist/orbit.js`；**单 Widget** 用 music / clock 独立包。
+> **多 Widget** → `dist/orbit.js`；**单 Widget** → `floating-widget-music.js` / `floating-widget-clock.js`。  
+> Contract 稳定性：`0.4 experimental`（见 [CONTRACT-ALPHA.md](./CONTRACT-ALPHA.md)）。
 
 ---
 
@@ -24,47 +25,61 @@
 <script src="./orbit.js" defer></script>
 ```
 
-**不要**再同时引入 `floating-widget-music.js` / `floating-widget-clock.js`。
+**不要**再同时引入 music/clock 独立入口脚本。
 
 ### 1.1 打开管理面板
 
 | 环境 | 方式 |
 |------|------|
 | 桌面 | `Alt+O`（`ORBIT.launcherKey` 可改） |
-| 手机 | **长按**任意悬浮球约 0.5s，少滑动后松手 |
-| 任意 | `Orbit.toggleLauncher()` / `openLauncher()` / `closeLauncher()` |
+| 手机 | **长按**任意悬浮球约 0.5s |
+| 脚本 | `Orbit.toggleLauncher()` / `openLauncher()` / `closeLauncher()` |
 | 关闭 | `Esc`、点遮罩 |
+
+面板列表默认 = `ORBIT.widgets` 中的 id（见 `listLauncherIds()` / `launcherShowAll`）。
 
 ### 1.2 `window.Orbit` API
 
-| 方法 | 说明 |
+| 方法 / 属性 | 说明 |
 |------|------|
-| `mount(config?)` | 按配置启动（入口会自动调用） |
-| `list()` | `[{ id, visible }]` |
-| `listHosts()` | 已注册宿主 id |
-| `listLauncherIds()` | Launcher 面板展示的 id（尊重 `ORBIT.widgets`） |
-| `setVisible(id, bool)` | 显示 / 隐藏 |
-| `toggleLauncher()` | 开关管理面板 |
-| `openLauncher()` / `closeLauncher()` | 开 / 关面板 |
+| `mount(config?)` | 按配置启动（入口脚本会自动调用） |
+| `list()` | 已挂载实例：`[{ id, visible }]` |
+| `listHosts()` | 全部已注册宿主 id |
+| `listLauncherIds()` | Launcher 实际展示的 id（尊重 `widgets` / `launcherShowAll`） |
+| `get(id)` | 实例快照：`{ id, visible, started, destroyed }` |
+| `getLabel(id)` | 展示名（Contract `label` → 回退 id） |
+| `setVisible(id, bool)` | 显示 / 隐藏（隐藏 ≠ 销毁） |
+| `destroy(id, options?)` | **显式销毁**；配置里省略 id **不会**销毁。`options.forget: true` 时清除该 id 的持久化可见性 |
+| `register(definition)` | 注册 Widget 定义（Contract） |
+| `toggleLauncher()` / `openLauncher()` / `closeLauncher()` | 管理面板 |
 | `getLauncherKey()` | 当前快捷键文案 |
-| `on` / `off` | 事件（如 `visibilityChange`） |
-| `version` | 如 `0.4.0` |
-| `destroy(id, options?)` | **显式销毁**（配置里省略 id 不会销毁）；`options.forget: true` 同时清除该 widget 的持久化可见性偏好 |
-| `get(id)` | 实例快照 |
-| `register(definition)` | Widget 定义注册 |
-| `exportProfile()` | 导出本地 Profile（schema / runtime 可见性 / 各 Widget 状态）为对象 |
-| `importProfile(jsonOrObj)` | 导入 Profile（schema 严格校验、单项损坏容错、可见性合并）；返回 `{ ok, imported? } 或 { ok:false, error }` |
+| `exportProfile()` / `importProfile(jsonOrObj)` | Profile 导入导出，见 [PROFILE.md](./PROFILE.md) |
+| `on` / `off` | 事件（如 `visibilityChange`、`mount`、`widgetError`） |
+| `version` | 如 `"0.4.0"` |
+| `getConfig()` | 当前已合并配置的浅拷贝 |
+| `isMounted()` | Runtime 是否已 `mount` |
 
 ### 1.3 `window.ORBIT` 配置
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `launcherKey` | string | 默认 `Alt+O` |
-| `launcherHint` | boolean | 首次右下角提示，默认 true |
-| `widgets` | array | `{ id: "music"\|"clock"\|"notice", visible?: boolean }` |
-| `notice` | object | 可选 `{ title, text, position, offset, top, right, bottom, left, zIndex }`，见 [CONFIG.md](./CONFIG.md) Notice 节 |
-| `persistVisibility` | boolean | 默认 true：开关状态写入 `localStorage["orbit-visible-v1"]`，刷新后保持用户偏好；`false` 禁用 |
-| `launcherShowAll` | boolean | 默认 false：Launcher 只显示 `widgets` 里声明的组件；`true` 时显示全部已注册宿主 |
+| `launcherHint` | boolean | 首次提示，默认 true |
+| `widgets` | array | `{ id, visible? }`；id 常用 `music` / `clock` / `notice` |
+| `launcherShowAll` | boolean | 默认 false：面板只列 `widgets`；true 列全部已注册 |
+| `notice` | object | `{ title, text, position, offset, top, right, bottom, left, zIndex }`，见 [CONFIG.md](./CONFIG.md) |
+| `persistVisibility` | boolean | 默认 true → `localStorage["orbit-visible-v1"]` |
+| `launcherFallback` | string | `ghost` / `host-button` / `none` |
+
+完整说明与 Notice 位置预设见 [CONFIG.md](./CONFIG.md)。
+
+### 1.4 语义（0.4 已固定）
+
+| 语义 | 说明 |
+|------|------|
+| 隐藏 ≠ 销毁 | `setVisible(false)` 可再打开；资源仍由实例持有 |
+| 销毁须显式 | `destroy(id)`；从 `widgets` 省略 id **不**销毁已挂载实例 |
+| 配置与偏好 | 用户开关偏好（若开启持久化）优先于 `widgets[].visible` |
 
 ---
 
@@ -107,16 +122,18 @@
 
 | 模块 | 路径 |
 |------|------|
-| Orbit | `src/core/Orbit.js` |
-| Launcher | `src/core/Launcher.js` |
-| Gesture… | `src/interaction/*` |
-| Hosts | `src/host/*` |
+| Orbit / Launcher | `src/core/` |
+| Gesture / Drag / … | `src/interaction/` |
+| Music / Clock Host | `src/host/` |
+| Notice 等 Widget | `src/widgets/` |
+| 参考 Widget | `examples/reference-widget/` |
 
 ```bash
-npm run build
+npm run build    # dist/floating-widget-music.js | clock | orbit.js
+npm run verify   # 构建 + 测试 + 链接 / 打包检查
 ```
 
-生成 `dist/floating-widget-music.js`、`floating-widget-clock.js`、`orbit.js`。
+第三方接入请读 [CONTRACT-ALPHA.md](./CONTRACT-ALPHA.md)，不要依赖 `src/` 私有路径。
 
 ---
 
@@ -125,7 +142,7 @@ npm run build
 | 版本 | 含义 |
 |------|------|
 | `0.1.x` | 单 Widget 成品 |
-| `0.2.x` | Orbit 多 Widget + Launcher |
+| `0.2.x` | 多 Widget + Launcher |
 | `0.3.x` | destroy / LifecycleScope、ghost 恢复 |
-| `0.4.x` | Runtime Hardening · Contract Alpha（开发中） |
-| `1.0` | 计划锁定对外 API（未到） |
+| `0.4.x` | Runtime Hardening · Contract Alpha · Notice · Profile Alpha |
+| `1.0` | 计划锁定对外 API（需外部采用验证，见 [PILOT.md](./PILOT.md)） |

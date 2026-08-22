@@ -1,6 +1,6 @@
 # 主题变量（Theme）
 
-原则：**只改 CSS 变量与少量修饰类，不改状态机。**
+原则：**只改 CSS 变量与少量修饰类，不改状态机与 Runtime 行为。**
 
 ---
 
@@ -16,15 +16,13 @@
 }
 ```
 
-实际变量以 CSS 文件内定义为准（主题不同可能有 `--mp-*` 系列）。
-
-常用思路：
+实际变量以 CSS 文件内定义为准（多为 `--mp-*`）。
 
 | 目的 | 做法 |
 |------|------|
-| 球更大 | 增大 `--mp-size` / 球尺寸相关变量 |
-| 展开更宽 | `--mp-width-open` |
-| 毛玻璃 | `backdrop-filter` / 背景透明度（在对应选择器） |
+| 球更大 | 增大球尺寸相关变量 |
+| 展开更宽 | `--mp-width-open` 等 |
+| 毛玻璃 | 在对应选择器调整 `backdrop-filter` / 背景 |
 
 ---
 
@@ -46,9 +44,25 @@
 
 ---
 
+## Notice（`floating-widget-notice.css`）
+
+卡片主样式由 JS 内联写入；CSS 文件提供稳定选择器供主题覆盖：
+
+```css
+.orbit-notice { /* 根卡片 */ }
+.orbit-notice-head { }
+.orbit-notice-title { }
+.orbit-notice-close { }
+.orbit-notice-body { }
+```
+
+**位置**请用站长配置 `ORBIT.notice.position` / `top` / `right` 等（见 [CONFIG.md](./CONFIG.md)），不要用主题 CSS 写死 `top/right` 与配置打架。
+
+---
+
 ## 状态类（勿当主题入口乱删）
 
-这些 class 由 Runtime 写入，主题可**配样式**，不要靠 JS 旁路增删：
+这些 class 由 Runtime / Host 写入，主题可**配样式**，不要靠业务 JS 旁路增删：
 
 | class | 含义 |
 |-------|------|
@@ -56,12 +70,13 @@
 | `is-dragging` | 拖拽中 |
 | `is-docked` / `dock-left` / `dock-right` | 贴边 |
 | `is-snapping` | 吸附动画 |
-| `expand-left` | 向左展开 |
-| `is-magnet` | 磁吸预览 |
+| `expand-left` / `expand-down` | 展开方向 |
+| `is-magnet` / `magnet-left` / `magnet-right` | 磁吸预览 |
+| `orbit-hidden` | Runtime 通用隐藏（勿覆盖为 `display` 硬显） |
 
 ---
 
-## 主题包建议结构（未来）
+## 主题包建议结构
 
 ```text
 theme-xxx/
@@ -69,4 +84,4 @@ theme-xxx/
   ornaments.css   ← 可选装饰
 ```
 
-不包含 Interaction 与 Widget 业务逻辑。
+不包含 Interaction 与 Widget 业务逻辑。站点 inject 顺序见 [README](../README.md) 与 [CONFIG.md](./CONFIG.md)。

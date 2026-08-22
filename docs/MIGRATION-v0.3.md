@@ -49,4 +49,12 @@ Orbit.registerHost("music", {
 
 - [API.md](./API.md) · [CONFIG.md](./CONFIG.md) · [DEVELOPMENT.md](./DEVELOPMENT.md)
 - [CHANGELOG.md](../CHANGELOG.md) 0.3.0 条目
-- 0.3 迭代记录：[v0.3-iteration.md](./history/v0.3-iteration.md)
+- 0.3 迭代记录：[v0.3-iteration.md](./history/v0.3/v0.3-iteration.md)
+
+---
+
+## 补充：升到 0.4 时
+
+- Contract / Notice / Profile：见 [CHANGELOG.md](../CHANGELOG.md) 与 [CONFIG.md](./CONFIG.md)。
+- Launcher 默认只显示 `ORBIT.widgets` 中的 id；需要「面板里出现但默认关」时写入 `{ id: "notice", visible: false }`。
+- Notice 位置：`ORBIT.notice.position`（或 top/right/…）。

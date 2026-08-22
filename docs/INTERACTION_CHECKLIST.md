@@ -1,7 +1,7 @@
 # Interaction Checklist（可打印 / 可勾选）
 
 **Baseline Tag:** `interaction-baseline-v1`  
-**配套文档:** `docs/history/phase0-baseline.md`
+**配套文档:** `docs/history/v0.1/phase0-baseline.md`
 
 测试后请把结果填在「通过」列。全部通过才能进入 Phase 1。
 

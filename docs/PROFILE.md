@@ -9,7 +9,7 @@
 | 存储 key | 内容 | 归属 |
 |---|---|---|
 | `orbit-visible-v1` | 每个 Widget 的开/关偏好（Launcher 开关、公告关闭） | Runtime |
-| `orbit-profile:<widgetId>` | 每个 Widget 自己的隔离状态（如 Notice 的文本、Clock 的位置） | Widget（`ctx.profile`） |
+| `orbit-profile:<widgetId>` | 每个 Widget 隔离状态（如 Notice 的 dismissed、Clock 的位置；**Notice 的 title/text/position 以站长配置为准，不依赖此项展示**） | Widget（`ctx.profile`） |
 | `mp-state-v3` | Music 的 legacy 状态（位置、音量、歌单进度） | Music Host（历史遗留） |
 
 清除单个项：`localStorage.removeItem("orbit-visible-v1")`、`localStorage.removeItem("orbit-profile:notice")` 等。

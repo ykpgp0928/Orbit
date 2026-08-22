@@ -65,7 +65,7 @@ window.Orbit.register({
 | `version` | string | 推荐 | Widget 自身版本（与 Runtime 版本无关）；缺失时 Registry 记为 `undefined`。 |
 | `label` | string | 推荐 | 用户可见名称；缺失时回退为 id。**会进入 Launcher 面板 HTML，Runtime 负责转义**，但你仍应提供纯文本。 |
 | `capabilities` | object | 推荐 | `{ draggable, dockable, launcher, profile, ... }`；未知字段会被安全忽略，**Registry 原样保留**供消费方检视。v0.4 只固定 `launcher`、`profile`、`portal` 语义，`draggable`/`dockable` 仅作声明预留。 |
-| `defaultVisible` | boolean | 可选 | 默认 `true`；`false` 表示未列入 `ORBIT.widgets` 时默认不挂载（如 Notice）。 |
+| `defaultVisible` | boolean | 可选 | 默认 `true`；`false` 表示未列入 `ORBIT.widgets` 时默认不挂载（如 Notice）。 站长写入 `ORBIT.widgets` 的 id 才会默认出现在 Launcher；未列出的已注册项仅在 `launcherShowAll: true` 时显示。 |
 
 ## 3. `WidgetInstance`
 

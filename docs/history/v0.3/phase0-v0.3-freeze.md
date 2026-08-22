@@ -100,7 +100,7 @@ EOF
 
 | 文档 | 用途 |
 |------|------|
-| [phase0-baseline.md](./phase0-baseline.md) | 早期交互检查表（若仍适用） |
+| [phase0-baseline.md](../v0.1/phase0-baseline.md) | 早期交互检查表（若仍适用） |
 | [v0.3-iteration.md](./v0.3-iteration.md) | v0.3 全流程与清单 |
 | [API.md](../../API.md) / [CONFIG.md](../../CONFIG.md) | 0.2 公开配置 |
 
